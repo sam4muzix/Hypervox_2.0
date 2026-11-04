@@ -61,14 +61,14 @@ const App: React.FC = () => {
     return stopWatcher;
   }, []);
 
-  // 1. Cosmic Intro Screen first; clicking Enter triggers Phone OTP + Master Password Verification if not verified within 24h
-  if (showIntro || !currentUser || !currentUser.phoneVerified || !currentUser.passwordVerified) {
+  // 1. Cosmic Intro Screen first; clicking Enter triggers Master Password Verification if not verified within 24h
+  if (showIntro || !currentUser || !currentUser.passwordVerified) {
     return (
       <>
         <HypervoxIntro
           onEnter={() => {
             const activeUser = getCurrentUser();
-            if (activeUser && activeUser.phoneVerified && activeUser.passwordVerified) {
+            if (activeUser && activeUser.passwordVerified) {
               setCurrentUser(activeUser);
               setShowIntro(false);
             } else {
@@ -140,7 +140,7 @@ const App: React.FC = () => {
             <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/5 border border-emerald-500/30">
               <span className="w-2 h-2 rounded-full bg-emerald-400 shadow-[0_0_8px_#34d399]" />
               <span className="text-xs font-mono font-medium text-white max-w-[130px] truncate hidden sm:inline">
-                {currentUser.phone || currentUser.name}
+                {currentUser.name || 'Studio Producer'}
               </span>
               <button
                 onClick={() => {
