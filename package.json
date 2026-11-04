@@ -1,0 +1,48 @@
+{
+  "name": "hypervox---powered-by-sam",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "main": "main.js",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "lint": "tsc --noEmit",
+    "app:dev": "vite build && electron .",
+    "app:build": "vite build && electron-builder",
+    "server:clone": "./.venv_clone/bin/python3 chatterbox_server.py"
+  },
+  "build": {
+    "appId": "com.hypervox.app",
+    "productName": "Hypervox",
+    "directories": {
+      "output": "dist_electron"
+    },
+    "mac": {
+      "icon": "build/icon.png",
+      "target": "dmg",
+      "category": "public.app-category.music"
+    },
+    "files": [
+      "dist/**/*",
+      "main.js",
+      "package.json"
+    ]
+  },
+  "dependencies": {
+    "react": "^19.2.3",
+    "@google/genai": "^1.34.0",
+    "react-dom": "^19.2.3",
+    "lamejs": "npm:@breezystack/lamejs@^1.2.7",
+    "jszip": "3.10.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.14.0",
+    "@vitejs/plugin-react": "^5.0.0",
+    "electron": "^29.1.5",
+    "electron-builder": "^24.13.3",
+    "typescript": "~5.8.2",
+    "vite": "^6.2.0"
+  }
+}

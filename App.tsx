@@ -1,0 +1,175 @@
+import React, { useState } from 'react';
+import TtsPanel from './components/TtsPanel';
+import StoryPanel from './components/StoryPanel';
+import DubbingPanel from './components/DubbingPanel';
+import TranscribeTranslatePanel from './components/TranscribeTranslatePanel';
+
+enum Tab {
+  TTS = 'Neural TTS',
+  STORY = 'Audio Story Creator',
+  DUBBING = 'AI Dubbing',
+  TRANSLATION_SUITE = 'Speech & Translation',
+}
+
+const TAB_DESCRIPTIONS: Record<Tab, string> = {
+  [Tab.TTS]: 'Neural text-to-speech generation with per-sentence emotion control',
+  [Tab.STORY]: 'Full script analyzer & multi-voice autonomous audio story creator',
+  [Tab.DUBBING]: 'Multi-language regional audio dubbing and voice localization',
+  [Tab.TRANSLATION_SUITE]: 'Audio transcription, decoding, and multi-dialect text translation matrix',
+};
+
+const TAB_ICONS: Record<Tab, React.ReactNode> = {
+  [Tab.TTS]: (
+    <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="1.75" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" d="M19.125 3.375c2.25 0 3.375 1.125 3.375 3.375v10.5c0 2.25-1.125 3.375-3.375 3.375H4.875C2.625 20.625 1.5 19.5 1.5 17.25V6.75c0-2.25 1.125-3.375 3.375-3.375h14.25zM12 7.5v9m-3.75-6v3m7.5-3v3m-11.25-1.5v0m15 0v0" />
+    </svg>
+  ),
+  [Tab.STORY]: (
+    <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="1.75" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" d="M12 6.042A8.967 8.967 0 006 3.75c-1.052 0-2.062.18-3 .512v14.25A8.987 8.987 0 016 18c2.305 0 4.408.867 6 2.292m0-14.25a8.966 8.966 0 016-2.292c1.052 0 2.062.18 3 .512v14.25A8.987 8.987 0 0018 18a8.967 8.967 0 00-6 2.292m0-14.25v14.25" />
+    </svg>
+  ),
+  [Tab.DUBBING]: (
+    <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="1.75" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" d="M10.5 21l5.25-11.25L21 21m-9-3h7.5M3 5.621a48.474 48.474 0 016-.371m0 0c1.12 0 2.233.038 3.334.114M9 5.25V3m0 2.25c0 1.944-.33 3.812-.942 5.545M4.25 12.3c.73-1.854 1.258-3.81 1.558-5.836" />
+    </svg>
+  ),
+  [Tab.TRANSLATION_SUITE]: (
+    <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="1.75" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" d="M7.5 21L3 16.5m0 0L7.5 12M3 16.5h13.5m0-13.5L21 7.5m0 0L16.5 12M21 7.5H7.5" />
+    </svg>
+  ),
+};
+
+const App: React.FC = () => {
+  const [activeTab, setActiveTab] = useState<Tab>(Tab.TTS);
+  const [isDrawerOpen, setIsDrawerOpen] = useState(false);
+
+  return (
+    <div className="min-h-screen bg-[#050a07] text-gray-100 font-sans selection:bg-emerald-500/30 selection:text-white relative overflow-x-hidden">
+      
+      {/* Background Emerald Fluid Ambient Glows */}
+      <div className="fixed top-[-120px] left-[20%] w-[650px] h-[650px] bg-emerald-600/10 rounded-full blur-[160px] pointer-events-none z-0"></div>
+      <div className="fixed top-[300px] right-[10%] w-[600px] h-[600px] bg-emerald-500/10 rounded-full blur-[170px] pointer-events-none z-0"></div>
+
+      {/* Floating Green-Tinted Liquid Glass Header */}
+      <header className="sticky top-0 z-40 backdrop-blur-3xl bg-[#050a07]/60 border-b border-emerald-500/20 select-none">
+        <div className="max-w-[1800px] mx-auto px-6 h-20 flex items-center justify-between relative">
+          
+          {/* Left: Studio Modules Drawer Button */}
+          <button
+            onClick={() => setIsDrawerOpen(true)}
+            className="flex items-center gap-2.5 px-4 py-2 rounded-xl bg-emerald-950/40 hover:bg-emerald-900/60 border border-emerald-500/30 hover:border-emerald-400 transition-all text-xs font-semibold text-gray-200 shadow-sm"
+          >
+            <svg className="w-4 h-4 text-emerald-400" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6h16.5M3.75 12h16.5m-16.5 6h16.5" />
+            </svg>
+            <span>Studio Modules</span>
+          </button>
+
+          {/* Center Title strictly: Big HyperVox + by Greenmix Labs Subtitle */}
+          <div className="absolute left-1/2 -translate-x-1/2 text-center pointer-events-none flex flex-col items-center">
+            <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-white leading-none">
+              HyperVox
+            </h1>
+            <span className="text-xs font-bold text-emerald-400 uppercase tracking-[0.25em] mt-1">
+              by Greenmix Labs
+            </span>
+          </div>
+
+          {/* Right: Spacer for symmetry */}
+          <div className="w-28 hidden sm:block"></div>
+        </div>
+      </header>
+
+      {/* ── Slide-Out Green-Tinted Liquid Glass Studio Modules Drawer Modal ───── */}
+      {isDrawerOpen && (
+        <div className="fixed inset-0 z-50 flex">
+          {/* Backdrop Blur Overlay */}
+          <div 
+            onClick={() => setIsDrawerOpen(false)} 
+            className="fixed inset-0 bg-black/60 backdrop-blur-md transition-opacity"
+          />
+
+          {/* Drawer Panel */}
+          <div className="relative w-full max-w-sm bg-[#081810]/95 backdrop-blur-3xl border-r border-emerald-500/30 h-full p-6 flex flex-col justify-between shadow-2xl z-10 animate-slide-drawer">
+            <div className="space-y-6">
+              <div className="flex items-center justify-between border-b border-emerald-500/20 pb-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-xl bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-400">
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5" />
+                    </svg>
+                  </div>
+                  <div>
+                    <h2 className="text-sm font-bold text-white">Studio Modules</h2>
+                    <p className="text-[11px] text-emerald-400 font-medium">Select Audio Tool</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setIsDrawerOpen(false)}
+                  className="p-1.5 rounded-lg text-gray-400 hover:text-white hover:bg-white/10 transition-colors"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+
+              <div className="space-y-2.5">
+                {Object.values(Tab).map((tab) => {
+                  const isActive = activeTab === tab;
+                  return (
+                    <button
+                      key={tab}
+                      onClick={() => {
+                        setActiveTab(tab);
+                        setIsDrawerOpen(false);
+                      }}
+                      className={`
+                        w-full p-3.5 rounded-2xl text-left transition-all flex items-start gap-3.5 border text-xs font-semibold
+                        ${isActive
+                          ? 'bg-emerald-500/20 border-emerald-500 text-white shadow-lg shadow-emerald-500/10'
+                          : 'bg-white/[0.03] border-white/5 text-gray-300 hover:bg-emerald-500/10 hover:border-emerald-500/30'
+                        }
+                      `}
+                    >
+                      <div className={`p-2 rounded-xl border ${isActive ? 'bg-emerald-500 border-emerald-400 text-black' : 'bg-white/5 border-white/10 text-gray-400'}`}>
+                        {TAB_ICONS[tab]}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center justify-between">
+                          <span className="font-bold text-sm text-white">{tab}</span>
+                          {isActive && <span className="w-2 h-2 rounded-full bg-emerald-400 shadow-[0_0_6px_#34d399]"></span>}
+                        </div>
+                        <p className="text-[11px] text-gray-400 font-normal mt-0.5 leading-snug truncate">
+                          {TAB_DESCRIPTIONS[tab]}
+                        </p>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="pt-4 border-t border-emerald-500/20 text-center">
+              <p className="text-[11px] font-bold text-emerald-400 uppercase tracking-widest">HyperVox by Greenmix Labs</p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Main Studio Workstation Modules */}
+      <main className="max-w-[1800px] mx-auto px-6 py-8 relative z-10">
+        <div className="transition-all duration-300">
+          {activeTab === Tab.TTS && <TtsPanel />}
+          {activeTab === Tab.STORY && <StoryPanel />}
+          {activeTab === Tab.DUBBING && <DubbingPanel />}
+          {activeTab === Tab.TRANSLATION_SUITE && <TranscribeTranslatePanel />}
+        </div>
+      </main>
+    </div>
+  );
+};
+
+export default App;
