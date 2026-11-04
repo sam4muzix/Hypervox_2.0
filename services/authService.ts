@@ -1,4 +1,4 @@
-// Phone OTP Authentication & Backend Sheet Logging Service for Hypervox
+// Phone OTP + Master Password Authentication & 24-Hour Inactivity Session Service for Hypervox
 
 export interface UserProfile {
   id: string;
@@ -7,13 +7,32 @@ export interface UserProfile {
   email: string;
   picture?: string;
   phoneVerified: boolean;
+  passwordVerified: boolean;
   signedInAt: string;
+  lastActiveAt: number;
 }
 
-const STORAGE_KEY = 'hypervox_otp_user';
-const SESSION_KEY = 'hypervox_otp_session_user';
-const REMEMBER_KEY = 'hypervox_otp_remember_me';
+const STORAGE_KEY = 'hypervox_auth_session_v2';
 const OTP_SESSION_STORE = 'hypervox_pending_otp';
+export const INACTIVITY_LIMIT_MS = 24 * 60 * 60 * 1000; // 24 hours in milliseconds
+
+// Default case-sensitive master password ("RageofSpartan2026")
+const MASTER_PASSWORD_B64 = 'UmFnZW9mU3BhcnRhbjIwMjY=';
+
+const getMasterPassword = (): string => {
+  try {
+    return atob(MASTER_PASSWORD_B64);
+  } catch {
+    return 'RageofSpartan2026';
+  }
+};
+
+/**
+ * Case-sensitive master password check ("RageofSpartan2026").
+ */
+export const verifyMasterPassword = (enteredPassword: string): boolean => {
+  return enteredPassword === getMasterPassword();
+};
 
 interface PendingOtpRecord {
   phone: string;
@@ -33,56 +52,91 @@ const hashOtp = (phone: string, code: string): string => {
 
 /**
  * Get the current authenticated user session.
- * Requires `phoneVerified === true` so only OTP-verified users can enter the studio.
+ * - Requires both `phoneVerified === true` and `passwordVerified === true`.
+ * - Automatically logs out if inactive for more than 24 hours (`Date.now() - lastActiveAt > 24h`).
+ * - Otherwise refreshes `lastActiveAt` and does NOT ask to log in again within 24 hours.
  */
 export const getCurrentUser = (): UserProfile | null => {
   try {
-    const rememberMe = localStorage.getItem(REMEMBER_KEY) === 'true';
-    if (rememberMe) {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      if (raw) {
-        const parsed = JSON.parse(raw) as UserProfile;
-        if (parsed && parsed.phoneVerified && parsed.phone) return parsed;
-      }
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return null;
+
+    const parsed = JSON.parse(raw) as UserProfile;
+    if (!parsed || !parsed.phoneVerified || !parsed.passwordVerified || !parsed.phone) {
+      logoutUser();
+      return null;
     }
-    const sessionRaw = sessionStorage.getItem(SESSION_KEY);
-    if (sessionRaw) {
-      const parsed = JSON.parse(sessionRaw) as UserProfile;
-      if (parsed && parsed.phoneVerified && parsed.phone) return parsed;
+
+    const now = Date.now();
+    const lastActive = typeof parsed.lastActiveAt === 'number' ? parsed.lastActiveAt : new Date(parsed.signedInAt).getTime();
+
+    if (now - lastActive > INACTIVITY_LIMIT_MS) {
+      logoutUser();
+      return null;
     }
-    return null;
+
+    // Update lastActiveAt on access
+    parsed.lastActiveAt = now;
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(parsed));
+    return parsed;
   } catch {
     return null;
   }
 };
 
 /**
- * Persist verified user session.
+ * Persist verified user session for 24-hour rolling activity window.
  */
-export const setCurrentUser = (user: UserProfile, rememberMe: boolean = true): void => {
+export const setCurrentUser = (user: UserProfile, _rememberMe: boolean = true): void => {
   try {
-    if (rememberMe) {
-      localStorage.setItem(REMEMBER_KEY, 'true');
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(user));
-      sessionStorage.removeItem(SESSION_KEY);
-    } else {
-      localStorage.removeItem(REMEMBER_KEY);
-      localStorage.removeItem(STORAGE_KEY);
-      sessionStorage.setItem(SESSION_KEY, JSON.stringify(user));
-    }
+    const updated: UserProfile = {
+      ...user,
+      phoneVerified: true,
+      passwordVerified: true,
+      lastActiveAt: Date.now(),
+    };
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
   } catch {
     // Ignore storage errors
   }
 };
 
 /**
- * Log out user and clear OTP verification session.
+ * Touch session activity timestamp on user interaction; returns false if expired (>24h inactive).
+ */
+export const touchUserActivity = (): boolean => {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return false;
+    const parsed = JSON.parse(raw) as UserProfile;
+    const now = Date.now();
+    const lastActive = typeof parsed.lastActiveAt === 'number' ? parsed.lastActiveAt : now;
+
+    if (now - lastActive > INACTIVITY_LIMIT_MS) {
+      logoutUser();
+      return false;
+    }
+
+    // Throttle writes to localStorage to once every 30 seconds
+    if (now - lastActive > 30000) {
+      parsed.lastActiveAt = now;
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(parsed));
+    }
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+/**
+ * Log out user and clear session storage.
  */
 export const logoutUser = (): void => {
   try {
-    localStorage.removeItem(REMEMBER_KEY);
     localStorage.removeItem(STORAGE_KEY);
-    sessionStorage.removeItem(SESSION_KEY);
+    localStorage.removeItem('hypervox_otp_user');
+    localStorage.removeItem('hypervox_otp_remember_me');
+    sessionStorage.removeItem('hypervox_otp_session_user');
     sessionStorage.removeItem(OTP_SESSION_STORE);
   } catch {
     // Ignore
@@ -90,9 +144,51 @@ export const logoutUser = (): void => {
 };
 
 /**
+ * Starts a 24-hour inactivity monitor that tracks user activity and automatically
+ * invokes `onSessionExpired` if the user has been inactive for > 24 hours.
+ */
+export const startInactivityWatcher = (onSessionExpired: () => void): (() => void) => {
+  if (typeof window === 'undefined') return () => {};
+
+  const handleActivity = () => {
+    const stillValid = touchUserActivity();
+    if (!stillValid && !getCurrentUser()) {
+      onSessionExpired();
+    }
+  };
+
+  const checkExpiration = () => {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (!raw) return;
+      const parsed = JSON.parse(raw) as UserProfile;
+      const lastActive = typeof parsed.lastActiveAt === 'number' ? parsed.lastActiveAt : 0;
+      if (Date.now() - lastActive > INACTIVITY_LIMIT_MS) {
+        logoutUser();
+        onSessionExpired();
+      }
+    } catch {
+      // Ignore
+    }
+  };
+
+  const events = ['mousedown', 'keydown', 'touchstart', 'scroll', 'click'];
+  events.forEach((ev) => window.addEventListener(ev, handleActivity, { passive: true }));
+  window.addEventListener('focus', checkExpiration);
+  document.addEventListener('visibilitychange', checkExpiration);
+
+  const intervalId = window.setInterval(checkExpiration, 30000);
+
+  return () => {
+    events.forEach((ev) => window.removeEventListener(ev, handleActivity));
+    window.removeEventListener('focus', checkExpiration);
+    document.removeEventListener('visibilitychange', checkExpiration);
+    window.clearInterval(intervalId);
+  };
+};
+
+/**
  * Generate and dispatch a 6-digit OTP to the given phone number.
- * Uses backend `/api/otp` when hosted on greenmixlabs.com/Cloudflare and maintains
- * a cryptographic client verification record so OTP works across Cloudflare, Cloud Run, and local.
  */
 export const sendPhoneOtp = async (
   fullPhone: string,
@@ -100,9 +196,8 @@ export const sendPhoneOtp = async (
 ): Promise<{ success: boolean; otpPreview?: string; message: string }> => {
   const normalizedPhone = fullPhone.replace(/\s+/g, '').trim();
   const generatedCode = Math.floor(100000 + Math.random() * 900000).toString();
-  const expiresAt = Date.now() + 5 * 60 * 1000; // 5 minutes
+  const expiresAt = Date.now() + 5 * 60 * 1000;
 
-  // Store hashed pending OTP in sessionStorage
   const pending: PendingOtpRecord = {
     phone: normalizedPhone,
     codeHash: hashOtp(normalizedPhone, generatedCode),
@@ -114,7 +209,6 @@ export const sendPhoneOtp = async (
     // Ignore
   }
 
-  // Attempt backend /api/otp dispatch (Cloudflare Worker / SMS gateway)
   try {
     const res = await fetch('/api/otp', {
       method: 'POST',
@@ -139,7 +233,7 @@ export const sendPhoneOtp = async (
       }
     }
   } catch {
-    // Fallback to client-side OTP dispatch when /api/otp is not mounted
+    // Fallback to client-side OTP dispatch
   }
 
   return {
@@ -163,7 +257,6 @@ export const verifyPhoneOtp = async (
     return { valid: false, error: 'Please enter a valid 6-digit OTP code.' };
   }
 
-  // 1. Check local cryptographic session hash first
   try {
     const raw = sessionStorage.getItem(OTP_SESSION_STORE);
     if (raw) {
@@ -181,7 +274,6 @@ export const verifyPhoneOtp = async (
     // Continue to backend check
   }
 
-  // 2. Check backend /api/otp verification
   try {
     const res = await fetch('/api/otp', {
       method: 'POST',
@@ -200,14 +292,14 @@ export const verifyPhoneOtp = async (
       }
     }
   } catch {
-    // Ignore network error
+    // Ignore
   }
 
   return { valid: false, error: 'Invalid OTP code. Please check the 6-digit code and try again.' };
 };
 
 /**
- * Log verified phone login to backend (/api/log-login)
+ * Log verified phone + password login to backend (/api/log-login)
  */
 export const logLoginToSheet = async (user: UserProfile): Promise<boolean> => {
   const payload = {
@@ -219,7 +311,7 @@ export const logLoginToSheet = async (user: UserProfile): Promise<boolean> => {
     phone: user.phone || 'N/A',
     userId: user.id || 'N/A',
     picture: user.picture || '',
-    app: 'Hypervox AI Voice Studio (Phone OTP Verified)',
+    app: 'Hypervox AI Voice Studio (OTP + Password Verified)',
     userAgent: typeof navigator !== 'undefined' ? navigator.userAgent : '',
   };
 

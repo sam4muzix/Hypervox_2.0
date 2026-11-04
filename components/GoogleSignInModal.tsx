@@ -4,6 +4,7 @@ import {
   logLoginToSheet,
   sendPhoneOtp,
   verifyPhoneOtp,
+  verifyMasterPassword,
   type UserProfile,
 } from '../services/authService';
 
@@ -29,12 +30,13 @@ export const GoogleSignInModal: React.FC<GoogleSignInModalProps> = ({
   onClose,
   onSuccess,
 }) => {
-  const [step, setStep] = useState<'phone' | 'otp'>('phone');
+  const [step, setStep] = useState<'phone' | 'otp' | 'password'>('phone');
   const [name, setName] = useState('');
   const [countryCode, setCountryCode] = useState('+91');
   const [phoneNumber, setPhoneNumber] = useState('');
   const [otpDigits, setOtpDigits] = useState<string[]>(['', '', '', '', '', '']);
-  const [rememberMe, setRememberMe] = useState(true);
+  const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
@@ -42,11 +44,14 @@ export const GoogleSignInModal: React.FC<GoogleSignInModalProps> = ({
   const [resendCooldown, setResendCooldown] = useState(0);
 
   const otpInputRefs = useRef<(HTMLInputElement | null)[]>([]);
+  const passwordInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     if (isOpen) {
       setStep('phone');
       setOtpDigits(['', '', '', '', '', '']);
+      setPassword('');
+      setShowPassword(false);
       setErrorMsg(null);
       setStatusMessage(null);
       setDispatchedOtpPreview(null);
@@ -156,25 +161,56 @@ export const GoogleSignInModal: React.FC<GoogleSignInModalProps> = ({
     setStatusMessage('Verifying OTP...');
 
     const verification = await verifyPhoneOtp(fullPhone, enteredOtp);
+    setIsSubmitting(false);
+
     if (!verification.valid) {
-      setIsSubmitting(false);
       setStatusMessage(null);
       setErrorMsg(verification.error || 'Invalid OTP code.');
       return;
     }
 
+    // OTP Verified -> Transition to Step 3: Studio Password Gate
+    setPassword('');
+    setErrorMsg(null);
+    setStatusMessage('OTP verified! Please enter the studio access password.');
+    setStep('password');
+    setTimeout(() => {
+      passwordInputRef.current?.focus();
+    }, 80);
+  };
+
+  const handleVerifyPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setErrorMsg(null);
+
+    if (!password) {
+      setErrorMsg('Please enter the studio access password.');
+      return;
+    }
+
+    if (!verifyMasterPassword(password)) {
+      setErrorMsg('Invalid access password. Note: Password is case-sensitive.');
+      return;
+    }
+
+    setIsSubmitting(true);
+    setStatusMessage('Access granted! Initializing 24-hour studio session...');
+
     const displayName = name.trim() || `User ${cleanDigits.slice(-4)}`;
+    const now = Date.now();
     const user: UserProfile = {
-      id: `phone_${cleanDigits}_${Date.now()}`,
+      id: `phone_${cleanDigits}_${now}`,
       name: displayName,
       phone: fullPhone,
       email: fullPhone,
       phoneVerified: true,
+      passwordVerified: true,
       picture: `https://ui-avatars.com/api/?name=${encodeURIComponent(displayName)}&background=10b981&color=000&bold=true`,
-      signedInAt: new Date().toISOString(),
+      signedInAt: new Date(now).toISOString(),
+      lastActiveAt: now,
     };
 
-    setCurrentUser(user, rememberMe);
+    setCurrentUser(user, true);
     await logLoginToSheet(user);
 
     setIsSubmitting(false);
@@ -202,30 +238,74 @@ export const GoogleSignInModal: React.FC<GoogleSignInModalProps> = ({
           </button>
         )}
 
+        {/* Step Progress Indicator */}
+        <div className="flex items-center justify-center gap-2 relative z-10">
+          {(['phone', 'otp', 'password'] as const).map((s, idx) => {
+            const stepIndex = step === 'phone' ? 0 : step === 'otp' ? 1 : 2;
+            const isCompleted = idx < stepIndex;
+            const isCurrent = idx === stepIndex;
+            return (
+              <React.Fragment key={s}>
+                <div
+                  className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-mono font-bold uppercase tracking-wider border transition-all ${
+                    isCurrent
+                      ? 'bg-emerald-500/20 border-emerald-400 text-emerald-300 shadow-[0_0_12px_rgba(16,185,129,0.3)]'
+                      : isCompleted
+                      ? 'bg-emerald-500/10 border-emerald-500/40 text-emerald-400'
+                      : 'bg-white/5 border-white/10 text-gray-500'
+                  }`}
+                >
+                  <span>{isCompleted ? '✓' : idx + 1}</span>
+                  <span>{s === 'phone' ? 'Phone' : s === 'otp' ? 'OTP' : 'Password'}</span>
+                </div>
+                {idx < 2 && <div className="w-4 h-px bg-emerald-500/30" />}
+              </React.Fragment>
+            );
+          })}
+        </div>
+
         {/* Header */}
         <div className="text-center space-y-2 relative z-10">
           <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-emerald-500/15 border border-emerald-500/40 text-emerald-400 shadow-lg shadow-emerald-500/10">
-            <svg className="w-7 h-7" fill="none" stroke="currentColor" strokeWidth="1.8" viewBox="0 0 24 24">
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                d="M10.5 1.5H8.25A2.25 2.25 0 006 3.75v16.5a2.25 2.25 0 002.25 2.25h7.5A2.25 2.25 0 0018 20.25V3.75a2.25 2.25 0 00-2.25-2.25H13.5m-3 0V3h3V1.5m-3 0h3m-3 18.75h3"
-              />
-            </svg>
+            {step === 'password' ? (
+              <svg className="w-7 h-7" fill="none" stroke="currentColor" strokeWidth="1.8" viewBox="0 0 24 24">
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z"
+                />
+              </svg>
+            ) : (
+              <svg className="w-7 h-7" fill="none" stroke="currentColor" strokeWidth="1.8" viewBox="0 0 24 24">
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M10.5 1.5H8.25A2.25 2.25 0 006 3.75v16.5a2.25 2.25 0 002.25 2.25h7.5A2.25 2.25 0 0018 20.25V3.75a2.25 2.25 0 00-2.25-2.25H13.5m-3 0V3h3V1.5m-3 0h3m-3 18.75h3"
+                />
+              </svg>
+            )}
           </div>
 
           <div className="inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-[10px] font-mono font-bold text-emerald-400 uppercase tracking-widest">
             <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-            <span>Phone OTP Security Gate</span>
+            <span>
+              {step === 'password' ? 'Step 3 · Master Password Gate' : 'Phone OTP Security Gate'}
+            </span>
           </div>
 
           <h2 className="text-2xl sm:text-3xl font-black text-white tracking-tight">
-            {step === 'phone' ? 'Verify Your Phone' : 'Enter 6-Digit OTP'}
+            {step === 'phone'
+              ? 'Verify Your Phone'
+              : step === 'otp'
+              ? 'Enter 6-Digit OTP'
+              : 'Studio Password Access'}
           </h2>
           <p className="text-xs sm:text-sm text-gray-300 max-w-xs mx-auto leading-relaxed">
             {step === 'phone'
-              ? 'HyperVox Studio requires mobile OTP verification before granting access to the neural audio workstation.'
-              : `Enter the 6-digit verification code dispatched to ${fullPhone}`}
+              ? 'HyperVox Studio requires mobile OTP & master password verification before granting access.'
+              : step === 'otp'
+              ? `Enter the 6-digit verification code dispatched to ${fullPhone}`
+              : `OTP verified for ${fullPhone}. Enter the case-sensitive studio access password to unlock for 24 hours.`}
           </p>
         </div>
 
@@ -257,7 +337,7 @@ export const GoogleSignInModal: React.FC<GoogleSignInModalProps> = ({
           </div>
         )}
 
-        {step === 'phone' ? (
+        {step === 'phone' && (
           <form onSubmit={handleSendOtp} className="space-y-4 relative z-10">
             <div className="space-y-1.5 text-left">
               <label className="block text-xs font-mono font-bold text-gray-300 uppercase tracking-wider">
@@ -300,15 +380,9 @@ export const GoogleSignInModal: React.FC<GoogleSignInModalProps> = ({
               </div>
             </div>
 
-            <label className="flex items-center gap-2.5 cursor-pointer text-xs text-gray-300 pt-1">
-              <input
-                type="checkbox"
-                checked={rememberMe}
-                onChange={(e) => setRememberMe(e.target.checked)}
-                className="rounded bg-black/60 border-white/20 text-emerald-500 focus:ring-emerald-500 cursor-pointer"
-              />
-              <span>Keep my phone verified on this device</span>
-            </label>
+            <div className="p-2.5 rounded-xl bg-white/[0.03] border border-white/10 text-[11px] font-mono text-gray-400 text-center">
+              Session stays active for 24 hours · Auto-logout after 24h of inactivity
+            </div>
 
             <button
               type="submit"
@@ -321,7 +395,9 @@ export const GoogleSignInModal: React.FC<GoogleSignInModalProps> = ({
               </svg>
             </button>
           </form>
-        ) : (
+        )}
+
+        {step === 'otp' && (
           <form onSubmit={handleVerifyOtp} className="space-y-5 relative z-10">
             {/* 6-Digit OTP Input Boxes */}
             <div className="flex items-center justify-between gap-2 sm:gap-2.5">
@@ -370,7 +446,73 @@ export const GoogleSignInModal: React.FC<GoogleSignInModalProps> = ({
               disabled={isSubmitting || otpDigits.join('').length !== 6}
               className="w-full py-3.5 px-6 rounded-xl bg-emerald-500 hover:bg-emerald-400 disabled:opacity-50 text-black font-black text-xs sm:text-sm uppercase tracking-widest transition-all shadow-[0_0_30px_rgba(16,185,129,0.35)] flex items-center justify-center gap-2 cursor-pointer"
             >
-              <span>{isSubmitting ? 'VERIFYING OTP...' : 'VERIFY OTP & ENTER STUDIO'}</span>
+              <span>{isSubmitting ? 'VERIFYING OTP...' : 'VERIFY OTP & CONTINUE'}</span>
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 4.5L21 12m0 0l-7.5 7.5M21 12H3" />
+              </svg>
+            </button>
+          </form>
+        )}
+
+        {step === 'password' && (
+          <form onSubmit={handleVerifyPassword} className="space-y-5 relative z-10">
+            <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 flex items-center gap-2.5 text-xs text-emerald-300 font-mono">
+              <span className="w-2 h-2 rounded-full bg-emerald-400 flex-shrink-0" />
+              <span>Phone {fullPhone} OTP Verified ✓</span>
+            </div>
+
+            <div className="space-y-2 text-left">
+              <label className="block text-xs font-mono font-bold text-gray-300 uppercase tracking-wider">
+                Studio Access Password <span className="text-emerald-400">(Case-Sensitive)</span>
+              </label>
+              <div className="relative">
+                <input
+                  ref={passwordInputRef}
+                  type={showPassword ? 'text' : 'password'}
+                  required
+                  value={password}
+                  onChange={(e) => {
+                    setPassword(e.target.value);
+                    setErrorMsg(null);
+                  }}
+                  placeholder="Enter access password"
+                  autoComplete="off"
+                  className="w-full bg-black/70 border border-emerald-500/40 focus:border-emerald-400 focus:ring-2 focus:ring-emerald-500/30 rounded-xl px-4 py-3.5 pr-12 text-sm font-mono text-white placeholder-gray-500 focus:outline-none transition-all"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword((prev) => !prev)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-white p-1.5 rounded-lg transition-colors cursor-pointer"
+                  title={showPassword ? 'Hide Password' : 'Show Password'}
+                >
+                  {showPassword ? (
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        d="M3.98 8.223A10.477 10.477 0 001.934 12C3.226 16.338 7.244 19.5 12 19.5c.993 0 1.953-.138 2.863-.395M6.228 6.228A10.45 10.45 0 0112 4.5c4.756 0 8.773 3.162 10.065 7.498a10.523 10.523 0 01-4.293 5.774M6.228 6.228L3 3m3.228 3.228l3.65 3.65m7.894 7.894L21 21m-3.228-3.228l-3.65-3.65m0 0a3 3 0 10-4.243-4.243m4.242 4.242L9.88 9.88"
+                      />
+                    </svg>
+                  ) : (
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z"
+                      />
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                    </svg>
+                  )}
+                </button>
+              </div>
+            </div>
+
+            <button
+              type="submit"
+              disabled={isSubmitting || !password}
+              className="w-full py-3.5 px-6 rounded-xl bg-emerald-500 hover:bg-emerald-400 disabled:opacity-50 text-black font-black text-xs sm:text-sm uppercase tracking-widest transition-all shadow-[0_0_30px_rgba(16,185,129,0.35)] flex items-center justify-center gap-2 cursor-pointer"
+            >
+              <span>{isSubmitting ? 'UNLOCKING STUDIO...' : 'UNLOCK HYPERVOX STUDIO'}</span>
               <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
               </svg>

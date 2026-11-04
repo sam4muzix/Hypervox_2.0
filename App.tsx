@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import TtsPanel from './components/TtsPanel';
 import StoryPanel from './components/StoryPanel';
 import DubbingPanel from './components/DubbingPanel';
@@ -6,7 +6,7 @@ import TranscribeTranslatePanel from './components/TranscribeTranslatePanel';
 import HypervoxIntro from './components/HypervoxIntro';
 import { IntroModal } from './components/IntroModal';
 import GoogleSignInModal from './components/GoogleSignInModal';
-import { getCurrentUser, logoutUser, type UserProfile } from './services/authService';
+import { getCurrentUser, logoutUser, startInactivityWatcher, type UserProfile } from './services/authService';
 
 enum Tab {
   TTS = 'Neural TTS',
@@ -48,18 +48,28 @@ const TAB_ICONS: Record<Tab, React.ReactNode> = {
 const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<Tab>(Tab.TTS);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
-  const [showIntro, setShowIntro] = useState(true);
   const [currentUser, setCurrentUser] = useState<UserProfile | null>(() => getCurrentUser());
+  const [showIntro, setShowIntro] = useState<boolean>(() => !getCurrentUser());
   const [showOtpModal, setShowOtpModal] = useState(false);
   const [isGuideOpen, setIsGuideOpen] = useState(false);
 
-  // 1. Cosmic Intro Screen first; clicking Enter triggers Phone OTP Verification if not verified
-  if (showIntro || !currentUser || !currentUser.phoneVerified) {
+  useEffect(() => {
+    const stopWatcher = startInactivityWatcher(() => {
+      setCurrentUser(null);
+      setShowIntro(true);
+    });
+    return stopWatcher;
+  }, []);
+
+  // 1. Cosmic Intro Screen first; clicking Enter triggers Phone OTP + Master Password Verification if not verified within 24h
+  if (showIntro || !currentUser || !currentUser.phoneVerified || !currentUser.passwordVerified) {
     return (
       <>
         <HypervoxIntro
           onEnter={() => {
-            if (currentUser && currentUser.phoneVerified) {
+            const activeUser = getCurrentUser();
+            if (activeUser && activeUser.phoneVerified && activeUser.passwordVerified) {
+              setCurrentUser(activeUser);
               setShowIntro(false);
             } else {
               setShowOtpModal(true);
