@@ -82,7 +82,8 @@ const markKeyCooldown = (key: string, ms: number) => {
 };
 
 const getActiveApiKeys = (): string[] => {
-  const envKey = (typeof process !== 'undefined' && (process.env.API_KEY || process.env.GEMINI_API_KEY))?.trim();
+  const rawEnvKey = typeof process !== 'undefined' ? (process.env.API_KEY || process.env.GEMINI_API_KEY) : '';
+  const envKey = rawEnvKey ? String(rawEnvKey).trim() : '';
   const keys = [...API_KEY_POOL];
   if (envKey && envKey !== 'undefined' && !keys.includes(envKey)) {
     keys.unshift(envKey);
@@ -1150,7 +1151,7 @@ const synthesizeChunk = async (
       }
       const audioPart = cand?.content?.parts?.find((p: any) => p.inlineData?.data);
       if (!audioPart) return null;
-      return extractPcmFromAudioBuffer(decodeBase64ToUint8Array(audioPart.inlineData!.data));
+      return extractPcmFromAudioBuffer(decodeBase64ToUint8Array(audioPart.inlineData!.data || ''));
     }
   };
 
