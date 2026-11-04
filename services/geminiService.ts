@@ -880,17 +880,12 @@ const resolveChatterboxEndpoint = async (): Promise<string | null> => {
   chatterboxProbeTimestamp = now;
 
   const envUrl = (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_CHATTERBOX_URL) || '';
-  const isLocalHost = typeof window !== 'undefined' && (
-    window.location.hostname === 'localhost' ||
-    window.location.hostname === '127.0.0.1' ||
-    window.location.protocol === 'file:'
-  );
 
-  const candidates = [
+  const candidates = Array.from(new Set([
     envUrl ? envUrl.replace(/\/$/, '') : '',
-    isLocalHost ? CHATTERBOX_URL : '',
+    CHATTERBOX_URL,
     '/api/chatterbox',
-  ].filter(Boolean);
+  ])).filter(Boolean);
 
   for (const base of candidates) {
     try {
@@ -1845,6 +1840,34 @@ Respond ONLY with a valid JSON object (no markdown, no backticks):
     const jsonStr = raw.replace(/^```json\s*|^```\s*|```$/gim, '').trim();
     const parsed = JSON.parse(jsonStr);
     fingerprint = { ...fingerprint, ...parsed };
+
+    // Reconcile acousticProfile voice selection with Gemini multimodal speaker gender/pitch detection
+    const gStr = String(fingerprint.gender || '').toLowerCase();
+    const pStr = `${fingerprint.pitch || ''} ${fingerprint.tone || ''} ${fingerprint.delivery || ''}`.toLowerCase();
+    const isDetectedFemale = /\b(female|woman|girl|soprano|contralto|alto)\b/.test(gStr);
+    const isDetectedMale = !isDetectedFemale && /\b(male|man|boy|baritone|bass|tenor)\b/.test(gStr);
+
+    if (isDetectedMale) {
+      acousticProfile.detectedGender = VoiceGender.MALE;
+      if (/\b(deep|bass|sub|low|baritone|gravelly)\b/.test(pStr) || acousticProfile.pitchHz <= 115) {
+        acousticProfile.matchedVoiceName = acousticProfile.pitchHz <= 102 ? 'Iapetus' : 'Charon';
+      } else if (/\b(warm|velvet|smooth|calm|narrat)\b/.test(pStr)) {
+        acousticProfile.matchedVoiceName = 'Orus';
+      } else if (/\b(high|youth|casual|bright|tenor)\b/.test(pStr) && acousticProfile.pitchHz > 142) {
+        acousticProfile.matchedVoiceName = 'Puck';
+      } else {
+        acousticProfile.matchedVoiceName = 'Fenrir';
+      }
+    } else if (isDetectedFemale) {
+      acousticProfile.detectedGender = VoiceGender.FEMALE;
+      if (/\b(deep|husky|smoky|low|contralto|velvet|warm)\b/.test(pStr) || acousticProfile.pitchHz <= 188) {
+        acousticProfile.matchedVoiceName = 'Callirrhoe';
+      } else if (/\b(bright|high|energetic|crisp|power)\b/.test(pStr) && acousticProfile.pitchHz >= 220) {
+        acousticProfile.matchedVoiceName = 'Kore';
+      } else {
+        acousticProfile.matchedVoiceName = 'Aoede';
+      }
+    }
   } catch (e) {
     console.warn('[getReferenceVoiceAnalysis] Using DSP acoustic profile defaults:', e);
   }
@@ -2087,19 +2110,8 @@ Deliver strictly in ONE single consistent voice (${acousticProfile.matchedVoiceN
     offset += b.byteLength;
   }
 
-  // Apply target reference speaker's acoustic pitch & spectral envelope transfer
-  let finalPcm = applyAcousticTransfer(mergedPcm, acousticProfile, 24000);
-
-  // Lock duration to source audio duration adjusted by speed multiplier
-  const actualDuration = (finalPcm.byteLength / 2) / 24000;
-  if (sourceDuration > 0.3 && actualDuration > 0.3) {
-    const targetSecs = sourceDuration / Math.max(0.5, Math.min(2.0, speed));
-    if (Math.abs(actualDuration - targetSecs) > 0.15) {
-      finalPcm = stretchPcmToTargetDuration(finalPcm, actualDuration, targetSecs, 24000);
-    }
-  } else if (Math.abs(speed - 1.0) > 0.04 && actualDuration > 0.2) {
-    finalPcm = stretchPcmToTargetDuration(finalPcm, actualDuration, actualDuration / speed, 24000);
-  }
+  // Apply gentle spectral envelope matching (no linear resampling, preserving 100% natural pitch and formants)
+  const finalPcm = applyAcousticTransfer(mergedPcm, acousticProfile, 24000);
 
   if (onProgress) onProgress(3, 3);
   return pcmToWav(finalPcm, 24000, 1);

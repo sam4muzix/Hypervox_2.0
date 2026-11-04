@@ -40,7 +40,6 @@ export const GoogleSignInModal: React.FC<GoogleSignInModalProps> = ({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
-  const [dispatchedOtpPreview, setDispatchedOtpPreview] = useState<string | null>(null);
   const [resendCooldown, setResendCooldown] = useState(0);
 
   const otpInputRefs = useRef<(HTMLInputElement | null)[]>([]);
@@ -54,7 +53,6 @@ export const GoogleSignInModal: React.FC<GoogleSignInModalProps> = ({
       setShowPassword(false);
       setErrorMsg(null);
       setStatusMessage(null);
-      setDispatchedOtpPreview(null);
     }
   }, [isOpen]);
 
@@ -92,7 +90,6 @@ export const GoogleSignInModal: React.FC<GoogleSignInModalProps> = ({
       return;
     }
 
-    setDispatchedOtpPreview(res.otpPreview || null);
     setStatusMessage(res.message);
     setOtpDigits(['', '', '', '', '', '']);
     setStep('otp');
@@ -131,20 +128,6 @@ export const GoogleSignInModal: React.FC<GoogleSignInModalProps> = ({
     setOtpDigits(next);
     const focusIdx = Math.min(5, pasted.length);
     otpInputRefs.current[focusIdx]?.focus();
-  };
-
-  const handleAutoFillOtp = () => {
-    if (!dispatchedOtpPreview) return;
-    const chars = dispatchedOtpPreview.slice(0, 6).split('');
-    setOtpDigits([
-      chars[0] || '',
-      chars[1] || '',
-      chars[2] || '',
-      chars[3] || '',
-      chars[4] || '',
-      chars[5] || '',
-    ]);
-    setErrorMsg(null);
   };
 
   const handleVerifyOtp = async (e: React.FormEvent) => {
@@ -313,27 +296,6 @@ export const GoogleSignInModal: React.FC<GoogleSignInModalProps> = ({
         {errorMsg && (
           <div className="p-3 rounded-xl bg-red-500/15 border border-red-500/40 text-xs text-red-300 text-center font-medium relative z-10">
             {errorMsg}
-          </div>
-        )}
-
-        {/* Live OTP Dispatch Banner (Step 2) */}
-        {step === 'otp' && dispatchedOtpPreview && (
-          <div className="p-3.5 rounded-2xl bg-emerald-500/10 border border-emerald-500/40 flex items-center justify-between gap-3 relative z-10">
-            <div className="text-left">
-              <span className="text-[10px] font-mono uppercase tracking-widest text-emerald-400 block font-bold">
-                Instant Studio OTP Code
-              </span>
-              <span className="text-lg font-mono font-black tracking-[0.25em] text-white">
-                {dispatchedOtpPreview}
-              </span>
-            </div>
-            <button
-              type="button"
-              onClick={handleAutoFillOtp}
-              className="px-3 py-1.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-black font-bold text-xs uppercase tracking-wider transition-all cursor-pointer flex-shrink-0"
-            >
-              Auto-Fill
-            </button>
           </div>
         )}
 

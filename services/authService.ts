@@ -188,63 +188,61 @@ export const startInactivityWatcher = (onSessionExpired: () => void): (() => voi
 };
 
 /**
- * Generate and dispatch a 6-digit OTP to the given phone number.
+ * Resolve the real backend OTP API URL (uses local /api/otp on greenmixlabs.com, or https://greenmixlabs.com/api/otp when running locally).
+ */
+const getOtpApiUrl = (): string => {
+  if (typeof window !== 'undefined') {
+    const host = window.location.hostname;
+    if (host === 'localhost' || host === '127.0.0.1') {
+      return 'https://greenmixlabs.com/api/otp';
+    }
+  }
+  return '/api/otp';
+};
+
+/**
+ * Dispatch a real 6-digit SMS OTP to the given phone number via the backend SMS gateway (/api/otp).
+ * Strictly no client-side mockup OTP preview.
  */
 export const sendPhoneOtp = async (
   fullPhone: string,
   name?: string
-): Promise<{ success: boolean; otpPreview?: string; message: string }> => {
+): Promise<{ success: boolean; message: string }> => {
   const normalizedPhone = fullPhone.replace(/\s+/g, '').trim();
-  const generatedCode = Math.floor(100000 + Math.random() * 900000).toString();
-  const expiresAt = Date.now() + 5 * 60 * 1000;
-
-  const pending: PendingOtpRecord = {
-    phone: normalizedPhone,
-    codeHash: hashOtp(normalizedPhone, generatedCode),
-    expiresAt,
-  };
-  try {
-    sessionStorage.setItem(OTP_SESSION_STORE, JSON.stringify(pending));
-  } catch {
-    // Ignore
-  }
 
   try {
-    const res = await fetch('/api/otp', {
+    const res = await fetch(getOtpApiUrl(), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
       body: JSON.stringify({
         action: 'send',
         phone: normalizedPhone,
         name: name || 'HyperVox User',
-        clientOtp: generatedCode,
       }),
     });
-    if (res.ok) {
-      const data = await res.json().catch(() => null);
-      if (data && data.success) {
-        return {
-          success: true,
-          otpPreview: data.otpPreview || generatedCode,
-          message: data.smsDelivered
-            ? `6-digit OTP sent via SMS to ${normalizedPhone}`
-            : `6-digit OTP generated for ${normalizedPhone}`,
-        };
-      }
-    }
-  } catch {
-    // Fallback to client-side OTP dispatch
-  }
 
-  return {
-    success: true,
-    otpPreview: generatedCode,
-    message: `6-digit verification code sent to ${normalizedPhone}`,
-  };
+    const data = await res.json().catch(() => null);
+    if (res.ok && data && data.success) {
+      return {
+        success: true,
+        message: data.message || `6-digit OTP sent via SMS to ${normalizedPhone}`,
+      };
+    }
+
+    return {
+      success: false,
+      message: (data && data.message) || 'Failed to deliver SMS OTP. Please check your phone number.',
+    };
+  } catch (err: any) {
+    return {
+      success: false,
+      message: err?.message || 'Network error while contacting SMS OTP gateway.',
+    };
+  }
 };
 
 /**
- * Verify the 6-digit OTP code entered by the user.
+ * Verify the 6-digit SMS OTP code entered by the user against the backend (/api/otp).
  */
 export const verifyPhoneOtp = async (
   fullPhone: string,
@@ -258,24 +256,7 @@ export const verifyPhoneOtp = async (
   }
 
   try {
-    const raw = sessionStorage.getItem(OTP_SESSION_STORE);
-    if (raw) {
-      const pending = JSON.parse(raw) as PendingOtpRecord;
-      if (Date.now() > pending.expiresAt) {
-        sessionStorage.removeItem(OTP_SESSION_STORE);
-        return { valid: false, error: 'OTP has expired. Please request a new OTP.' };
-      }
-      if (pending.phone === normalizedPhone && pending.codeHash === hashOtp(normalizedPhone, cleanOtp)) {
-        sessionStorage.removeItem(OTP_SESSION_STORE);
-        return { valid: true };
-      }
-    }
-  } catch {
-    // Continue to backend check
-  }
-
-  try {
-    const res = await fetch('/api/otp', {
+    const res = await fetch(getOtpApiUrl(), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
       body: JSON.stringify({
@@ -284,18 +265,17 @@ export const verifyPhoneOtp = async (
         otp: cleanOtp,
       }),
     });
-    if (res.ok) {
-      const data = await res.json().catch(() => null);
-      if (data && data.valid) {
-        sessionStorage.removeItem(OTP_SESSION_STORE);
-        return { valid: true };
-      }
+    const data = await res.json().catch(() => null);
+    if (res.ok && data && data.valid) {
+      return { valid: true };
     }
+    return {
+      valid: false,
+      error: (data && data.error) || 'Invalid or expired OTP code. Please check your SMS and try again.',
+    };
   } catch {
-    // Ignore
+    return { valid: false, error: 'Network error verifying OTP. Please try again.' };
   }
-
-  return { valid: false, error: 'Invalid OTP code. Please check the 6-digit code and try again.' };
 };
 
 /**

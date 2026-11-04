@@ -192,52 +192,79 @@ export interface AcousticVoiceProfile {
 }
 
 /**
- * Autocorrelation-based pitch, spectral brightness, and vocal timbre analysis
- * to detect speaker gender, fundamental frequency, and the optimal Gemini base voice match.
+ * Low-pass filtered Normalized Cross-Correlation (NCCF) pitch, spectral brightness, and vocal timbre analysis
+ * to detect true fundamental frequency F0 (without upper-harmonic octave doubling), speaker gender,
+ * and the optimal Gemini base voice match.
  */
 export const analyzeAudioAcoustics = (samples: Float32Array, sampleRate: number = 24000): AcousticVoiceProfile => {
+  // 1. 1-pole low-pass filter (~300 Hz cutoff) to suppress upper formants/harmonics that cause octave errors
+  const lpSamples = new Float32Array(samples.length);
+  const alpha = 0.075; // ~300 Hz at 24kHz
+  let prev = 0;
+  for (let i = 0; i < samples.length; i++) {
+    prev = prev + alpha * (samples[i] - prev);
+    lpSamples[i] = prev;
+  }
+
   const frameSize = 2048;
   const hopSize = 1024;
   const pitches: number[] = [];
   let totalEnergy = 0;
   let highFreqEnergy = 0;
 
-  for (let i = 0; i + frameSize < samples.length; i += hopSize) {
-    let energy = 0;
-    for (let j = 0; j < frameSize; j++) {
-      energy += samples[i + j] * samples[i + j];
+  // Fundamental vocal range: 75 Hz to 285 Hz
+  const minPeriod = Math.floor(sampleRate / 285); // ~84 samples at 24kHz
+  const maxPeriod = Math.floor(sampleRate / 75);  // ~320 samples at 24kHz
+
+  for (let i = 0; i + frameSize < lpSamples.length; i += hopSize) {
+    let energy0 = 0;
+    for (let j = 0; j < frameSize - maxPeriod; j++) {
+      energy0 += lpSamples[i + j] * lpSamples[i + j];
     }
-    // Only analyze voiced frames above noise floor
-    if (energy < 0.005) continue;
+    if (energy0 < 0.002) continue;
 
-    // Autocorrelation within human vocal fundamental frequency range (65 Hz to 450 Hz)
-    const minPeriod = Math.floor(sampleRate / 450); // ~53 samples at 24kHz
-    const maxPeriod = Math.floor(sampleRate / 65);  // ~369 samples at 24kHz
-
-    let bestCorr = -1;
-    let bestPeriod = -1;
+    // Compute Normalized Cross-Correlation (NCCF) and pick the FIRST strong local peak (true F0 period)
+    const nccf = new Float32Array(maxPeriod + 1);
+    let maxNccf = -1;
 
     for (let lag = minPeriod; lag <= maxPeriod; lag++) {
       let corr = 0;
-      for (let j = 0; j < frameSize - lag; j++) {
-        corr += samples[i + j] * samples[i + j + lag];
+      let energyLag = 0;
+      const winLen = frameSize - maxPeriod;
+      for (let j = 0; j < winLen; j++) {
+        const a = lpSamples[i + j];
+        const b = lpSamples[i + j + lag];
+        corr += a * b;
+        energyLag += b * b;
       }
-      if (corr > bestCorr) {
-        bestCorr = corr;
-        bestPeriod = lag;
+      const denom = Math.sqrt(energy0 * energyLag);
+      const val = denom > 1e-8 ? corr / denom : 0;
+      nccf[lag] = val;
+      if (val > maxNccf) maxNccf = val;
+    }
+
+    if (maxNccf < 0.55) continue;
+
+    // Pick the first local peak >= 0.82 * maxNccf (avoids sub-harmonic doubling while preventing harmonic tripling)
+    const threshold = Math.max(0.55, maxNccf * 0.82);
+    let chosenPeriod = -1;
+    for (let lag = minPeriod + 1; lag < maxPeriod; lag++) {
+      if (nccf[lag] >= threshold && nccf[lag] >= nccf[lag - 1] && nccf[lag] >= nccf[lag + 1]) {
+        chosenPeriod = lag;
+        break;
       }
     }
 
-    if (bestPeriod > 0 && bestCorr > energy * 0.35) {
-      const freq = sampleRate / bestPeriod;
-      if (freq >= 65 && freq <= 450) {
+    if (chosenPeriod > 0) {
+      const freq = sampleRate / chosenPeriod;
+      if (freq >= 75 && freq <= 285) {
         pitches.push(freq);
       }
     }
   }
 
   // Median pitch calculation
-  let medianPitch = 140; // Default fallback
+  let medianPitch = 130; // Natural adult default fallback
   if (pitches.length > 0) {
     pitches.sort((a, b) => a - b);
     medianPitch = pitches[Math.floor(pitches.length / 2)];
@@ -249,9 +276,9 @@ export const analyzeAudioAcoustics = (samples: Float32Array, sampleRate: number 
     highFreqEnergy += diff * diff;
     totalEnergy += samples[i] * samples[i];
   }
-  const brightnessRatio = totalEnergy > 0 ? highFreqEnergy / totalEnergy : 0.5;
+  const brightnessRatio = totalEnergy > 0 ? highFreqEnergy / totalEnergy : 0.45;
 
-  const isFemale = medianPitch > 165;
+  const isFemale = medianPitch > 168;
   const detectedGender = isFemale ? VoiceGender.FEMALE : VoiceGender.MALE;
 
   let matchedVoiceName = 'Fenrir';
@@ -259,36 +286,40 @@ export const analyzeAudioAcoustics = (samples: Float32Array, sampleRate: number 
   let timbreDescription = 'balanced broadcast resonance';
 
   if (isFemale) {
-    if (medianPitch >= 225 || brightnessRatio > 0.8) {
+    if (medianPitch >= 225) {
       matchedVoiceName = 'Kore';
-      baseVoicePitchHz = 235;
-      timbreDescription = 'bright, crisp, clear high-register vocal presence';
-    } else if (medianPitch <= 190 || brightnessRatio < 0.4) {
+      baseVoicePitchHz = 225;
+      timbreDescription = 'clear expressive female vocal presence';
+    } else if (medianPitch <= 190) {
       matchedVoiceName = 'Callirrhoe';
-      baseVoicePitchHz = 175;
-      timbreDescription = 'warm velvet, deep rich female chest resonance';
+      baseVoicePitchHz = 178;
+      timbreDescription = 'warm velvet, rich female chest resonance';
     } else {
       matchedVoiceName = 'Aoede';
-      baseVoicePitchHz = 205;
+      baseVoicePitchHz = 200;
       timbreDescription = 'natural, smooth, warm conversational female timbre';
     }
   } else {
-    if (medianPitch <= 105 || brightnessRatio < 0.35) {
+    if (medianPitch <= 105) {
       matchedVoiceName = 'Iapetus';
-      baseVoicePitchHz = 95;
-      timbreDescription = 'deep baritone subwoofer bass resonance';
-    } else if (medianPitch <= 135) {
+      baseVoicePitchHz = 98;
+      timbreDescription = 'deep baritone chest resonance';
+    } else if (medianPitch <= 122) {
+      matchedVoiceName = 'Charon';
+      baseVoicePitchHz = 112;
+      timbreDescription = 'warm resonant authoritative male voice';
+    } else if (medianPitch <= 140) {
       matchedVoiceName = 'Fenrir';
-      baseVoicePitchHz = 125;
-      timbreDescription = 'rich commanding authoritative male broadcast timbre';
+      baseVoicePitchHz = 128;
+      timbreDescription = 'rich commanding natural male broadcast timbre';
     } else {
       matchedVoiceName = 'Puck';
-      baseVoicePitchHz = 150;
-      timbreDescription = 'energetic, natural and casual youthful male voice';
+      baseVoicePitchHz = 148;
+      timbreDescription = 'natural conversational mid-register male voice';
     }
   }
 
-  const acousticStyleDirective = `Acoustic Match: ${detectedGender.toUpperCase()} voice, fundamental pitch ~${Math.round(medianPitch)} Hz, ${timbreDescription}. Perfectly reproduce this speaker's pitch, timbre, vocal tract resonance, and natural cadence.`;
+  const acousticStyleDirective = `Acoustic Match: ${detectedGender.toUpperCase()} voice, fundamental pitch ~${Math.round(medianPitch)} Hz, ${timbreDescription}. Perfectly reproduce this speaker's natural chest resonance, vocal tract depth, and cadence without ever sounding high-pitched or sped up.`;
 
   return {
     detectedGender,
@@ -302,63 +333,45 @@ export const analyzeAudioAcoustics = (samples: Float32Array, sampleRate: number 
 };
 
 /**
- * Transforms synthesized PCM to match the measured reference pitch and spectral timbre.
+ * Applies gentle spectral timbre envelope matching (warm chest resonance or crisp presence)
+ * WITHOUT linear resampling, so vocal formants, speed, and natural pitch are 100% preserved (never chipmunk).
  */
 export const applyAcousticTransfer = (
   pcm: Uint8Array,
   profile: AcousticVoiceProfile,
-  sampleRate: number = 24000
+  _sampleRate: number = 24000
 ): Uint8Array => {
   if (pcm.byteLength < 4) return pcm;
 
   const numSamples = Math.floor(pcm.byteLength / 2);
   const input = new Int16Array(pcm.buffer, pcm.byteOffset, numSamples);
+  const processed = new Float32Array(numSamples);
 
-  // 1. Pitch matching ratio (clamped to safe range [0.82, 1.20] for natural vocal tract)
-  const pitchRatio = Math.max(0.82, Math.min(1.20, profile.pitchHz / profile.baseVoicePitchHz));
-  const needsPitchShift = Math.abs(pitchRatio - 1.0) > 0.03;
-
-  const resampledLength = needsPitchShift ? Math.round(numSamples / pitchRatio) : numSamples;
-  const processed = new Float32Array(resampledLength);
-
-  if (needsPitchShift) {
-    for (let i = 0; i < resampledLength; i++) {
-      const srcPos = i * pitchRatio;
-      const lo = Math.floor(srcPos);
-      const hi = Math.min(lo + 1, numSamples - 1);
-      const frac = srcPos - lo;
-      processed[i] = input[lo] * (1 - frac) + input[hi] * frac;
-    }
-  } else {
-    for (let i = 0; i < numSamples; i++) {
-      processed[i] = input[i];
-    }
+  for (let i = 0; i < numSamples; i++) {
+    processed[i] = input[i];
   }
 
-  // 2. Spectral timbre envelope shaping (1-pole IIR filter matching brightness)
-  // brightnessRatio > 0.7 = boost highs; brightnessRatio < 0.4 = boost warm chest resonance
-  if (profile.brightnessRatio > 0.70) {
-    // High-frequency presence boost (+2.5dB high shelf)
-    let prev = 0;
-    for (let i = 0; i < resampledLength; i++) {
-      const high = processed[i] - prev;
-      processed[i] = processed[i] + high * 0.35;
-      prev = processed[i];
-    }
-  } else if (profile.brightnessRatio < 0.40) {
-    // Warm chest resonance boost (low shelf + gentle high attenuation)
+  // Gentle spectral timbre envelope shaping without altering sample count or playback rate
+  if (profile.pitchHz < 135 || profile.brightnessRatio < 0.42) {
+    // Warm chest resonance enhancement for deeper voices
     let low = 0;
-    for (let i = 0; i < resampledLength; i++) {
-      low = low * 0.85 + processed[i] * 0.15;
-      processed[i] = processed[i] * 0.75 + low * 0.45;
+    for (let i = 0; i < numSamples; i++) {
+      low = low * 0.88 + processed[i] * 0.12;
+      processed[i] = processed[i] * 0.84 + low * 0.24;
+    }
+  } else if (profile.brightnessRatio > 0.78) {
+    // Subtle studio air/presence boost
+    let prev = 0;
+    for (let i = 0; i < numSamples; i++) {
+      const high = processed[i] - prev;
+      prev = processed[i];
+      processed[i] = processed[i] + high * 0.15;
     }
   }
 
-  // 3. Convert back to Int16 PCM with soft clipping
-  const outBytes = new Uint8Array(resampledLength * 2);
+  const outBytes = new Uint8Array(numSamples * 2);
   const outView = new DataView(outBytes.buffer);
-
-  for (let i = 0; i < resampledLength; i++) {
+  for (let i = 0; i < numSamples; i++) {
     const s = Math.max(-32767, Math.min(32767, Math.round(processed[i])));
     outView.setInt16(i * 2, s, true);
   }

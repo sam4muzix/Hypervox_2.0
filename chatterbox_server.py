@@ -44,66 +44,94 @@ def get_vc_model():
     return _vc_model
 
 
+def _decode_bytes_with_ffmpeg(raw_bytes: bytes, target_sr: int) -> np.ndarray:
+    """Decode any audio container (MP3, M4A, WAV, AAC, WebM, OGG) to clean mono float32 at target_sr."""
+    with tempfile.NamedTemporaryFile(suffix=".bin", delete=False) as in_tmp, \
+         tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as out_tmp:
+        in_tmp.write(raw_bytes)
+        in_path = in_tmp.name
+        out_path = out_tmp.name
+
+    try:
+        subprocess.run(
+            [
+                "ffmpeg", "-y", "-i", in_path,
+                "-vn", "-ac", "1", "-ar", str(target_sr),
+                "-acodec", "pcm_s16le", out_path,
+            ],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=True,
+            timeout=20,
+        )
+        wav, sr = sf.read(out_path, dtype="float32")
+        if wav.ndim > 1:
+            wav = np.mean(wav, axis=1)
+        return wav
+    except Exception:
+        import librosa
+        wav, _ = librosa.load(in_path, sr=target_sr, mono=True)
+        return wav.astype(np.float32)
+    finally:
+        for p in (in_path, out_path):
+            if os.path.exists(p):
+                try:
+                    os.remove(p)
+                except Exception:
+                    pass
+
+
 def _get_target_embedding(model, ref_bytes: bytes) -> Dict[str, Any]:
     """Cache and return the speaker conditioning embedding for the reference audio."""
     ref_hash = hashlib.sha256(ref_bytes).hexdigest()
     if ref_hash in _ref_cache:
         return _ref_cache[ref_hash]
 
-    with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
-        tmp.write(ref_bytes)
-        tmp_path = tmp.name
+    import librosa
+    ref_wav = _decode_bytes_with_ffmpeg(ref_bytes, model.sr)
 
-    try:
-        import librosa
-        ref_wav, _ = librosa.load(tmp_path, sr=model.sr)
-        # Cap reference audio to DEC_COND_LEN (10 seconds)
-        ref_wav = ref_wav[: model.DEC_COND_LEN]
-        ref_dict = model.s3gen.embed_ref(ref_wav, model.sr, device=model.device)
-        _ref_cache[ref_hash] = ref_dict
-        return ref_dict
-    finally:
-        if os.path.exists(tmp_path):
-            try:
-                os.remove(tmp_path)
-            except Exception:
-                pass
+    # Trim leading/trailing silence so speaker embedding captures pure voiced speech
+    trimmed, _ = librosa.effects.trim(ref_wav, top_db=28)
+    if len(trimmed) >= int(model.sr * 0.8):
+        ref_wav = trimmed
+
+    # Peak normalize reference audio for consistent speaker conditioning
+    peak = float(np.max(np.abs(ref_wav))) if len(ref_wav) > 0 else 0.0
+    if peak > 1e-4:
+        ref_wav = (ref_wav / peak) * 0.92
+
+    # Cap reference audio to DEC_COND_LEN (10 seconds at 24kHz)
+    ref_wav = ref_wav[: model.DEC_COND_LEN]
+    ref_dict = model.s3gen.embed_ref(ref_wav, model.sr, device=model.device)
+    _ref_cache[ref_hash] = ref_dict
+    return ref_dict
 
 
 def _load_audio_mono_16k(audio_bytes: bytes) -> torch.Tensor:
-    """Load arbitrary audio bytes into a 16kHz float32 mono tensor [1, N]."""
-    with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
-        tmp.write(audio_bytes)
-        tmp_path = tmp.name
-
-    try:
-        import librosa
-        audio_16, _ = librosa.load(tmp_path, sr=16000)
-        if len(audio_16) > 45 * 16000:
-            audio_16 = audio_16[: 45 * 16000]
-        return torch.from_numpy(audio_16).float()[None,]
-    finally:
-        if os.path.exists(tmp_path):
-            try:
-                os.remove(tmp_path)
-            except Exception:
-                pass
+    """Load arbitrary audio bytes into a clean 16kHz float32 mono tensor [1, N]."""
+    audio_16 = _decode_bytes_with_ffmpeg(audio_bytes, 16000)
+    if len(audio_16) > 45 * 16000:
+        audio_16 = audio_16[: 45 * 16000]
+    peak = float(np.max(np.abs(audio_16))) if len(audio_16) > 0 else 0.0
+    if peak > 1e-4:
+        audio_16 = (audio_16 / peak) * 0.92
+    return torch.from_numpy(audio_16).float()[None,]
 
 
 def _synthesize_local_speech(text: str) -> bytes:
-    """Generate clean 16kHz WAV speech from text in <100ms via macOS 'say'."""
+    """Generate clean 16kHz WAV speech from text via macOS 'say'."""
     with tempfile.NamedTemporaryFile(suffix=".aiff", delete=False) as aiff_tmp, \
          tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as wav_tmp:
         aiff_p = aiff_tmp.name
         wav_p = wav_tmp.name
 
     try:
-        subprocess.run(["say", "-o", aiff_p, text.strip()], check=True, timeout=10)
+        subprocess.run(["say", "-o", aiff_p, text.strip()], check=True, timeout=15)
         subprocess.run(
             ["ffmpeg", "-y", "-i", aiff_p, "-ar", "16000", "-ac", "1", wav_p],
             stderr=subprocess.DEVNULL,
             check=True,
-            timeout=10,
+            timeout=15,
         )
         with open(wav_p, "rb") as f:
             return f.read()
@@ -117,21 +145,20 @@ def _synthesize_local_speech(text: str) -> bytes:
 
 
 def _run_neural_conversion(model, audio_16_tensor: torch.Tensor, ref_dict: Dict[str, Any], speed: float = 1.0) -> bytes:
-    """Run fast 4-step CFM voice timbre conversion and return PCM 16-bit WAV bytes."""
+    """Run high-precision 10-step CFM voice timbre conversion and return PCM 16-bit 24kHz WAV bytes."""
     with torch.inference_mode():
         audio_16_tensor = audio_16_tensor.to(model.device)
         s3_tokens, _ = model.s3gen.tokenizer(audio_16_tensor)
-        # Optimized 4-step CFM inference for fast, smooth synthesis on CPU
         wav, _ = model.s3gen.inference(
             speech_tokens=s3_tokens,
             ref_dict=ref_dict,
-            n_cfm_timesteps=4,
+            n_cfm_timesteps=10,
         )
         wav_np = wav.squeeze(0).detach().cpu().numpy()
         watermarked_wav = model.watermarker.apply_watermark(wav_np, sample_rate=model.sr)
 
-    # Optional speed adjustment
-    if abs(speed - 1.0) > 0.03:
+    # Phase-vocoder time stretch ONLY if user explicitly requested Slow/Fast pacing (preserves pitch!)
+    if abs(speed - 1.0) > 0.05:
         import librosa
         watermarked_wav = librosa.effects.time_stretch(watermarked_wav, rate=speed)
 
@@ -145,7 +172,7 @@ def _run_neural_conversion(model, audio_16_tensor: torch.Tensor, ref_dict: Dict[
 async def health():
     return {
         "status": "ok",
-        "engine": "Chatterbox Voice Cloning (Accelerated)",
+        "engine": "Chatterbox Voice Cloning (High-Precision 24kHz)",
         "model_loaded": _vc_model is not None,
     }
 
@@ -157,11 +184,6 @@ async def clone_voice(
     speed: float = Form(1.0),
     source_audio: Optional[UploadFile] = File(None),
 ):
-    """
-    Dedicated voice cloning via Chatterbox Neural Engine:
-    Converts speech to match the reference target speaker voice.
-    Accepts pre-synthesized source audio or auto-synthesizes from script text.
-    """
     model = get_vc_model()
     ref_bytes = await reference_audio.read()
     if not ref_bytes:
@@ -169,7 +191,6 @@ async def clone_voice(
 
     ref_dict = _get_target_embedding(model, ref_bytes)
 
-    # Determine source audio to convert
     if source_audio is not None:
         src_bytes = await source_audio.read()
     elif text.strip():
@@ -202,10 +223,6 @@ async def voice_conversion(
     reference_audio: UploadFile = File(...),
     speed: float = Form(1.0),
 ):
-    """
-    Direct acoustic Voice-to-Voice conversion via Chatterbox Neural Engine:
-    Converts source_audio timbre directly to reference_audio target speaker.
-    """
     model = get_vc_model()
     ref_bytes = await reference_audio.read()
     src_bytes = await source_audio.read()
@@ -231,7 +248,6 @@ async def voice_conversion(
 
 if __name__ == "__main__":
     import uvicorn
-    # Warm up model on server start for instantaneous response
     try:
         get_vc_model()
     except Exception as e:
