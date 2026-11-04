@@ -1,6 +1,6 @@
 import { GoogleGenAI, GenerateContentResponse, Modality } from "@google/genai";
 import { Dialect, Emotion, VoiceOption, VoiceGender, TranscriptionStyle, DubbingGender, SpeechPacing, MultiSpeakerOptions, StorySegment } from '../types';
-import { decodeBase64ToUint8Array, extractPcmFromAudioBuffer, pcmToWav, blobToBase64, getAudioDurationFromFile, applyDspChorus, convertAudioFileTo24kMonoWav, applyAcousticTransfer } from '../utils/audio';
+import { decodeBase64ToUint8Array, extractPcmFromAudioBuffer, pcmToWav, blobToBase64, getAudioDurationFromFile, applyDspChorus, convertAudioFileTo24kMonoWav, applyAcousticTransfer, stretchPcmToTargetDuration } from '../utils/audio';
 import { getAutoPronunciationGuidance, findRememberedDubbing, saveDownloadedDubbingProfile } from '../utils/memoryStore';
 
 // ─── Constants & Multi-Model / Multi-Key Rotation Pools ───────────────────────
@@ -868,12 +868,60 @@ const buildDialoguePromptContext = (
   return context;
 };
 
+let cachedChatterboxBaseUrl: string | null | undefined = undefined;
+let chatterboxProbeTimestamp = 0;
+
+const resolveChatterboxEndpoint = async (): Promise<string | null> => {
+  const now = Date.now();
+  if (cachedChatterboxBaseUrl !== undefined && now - chatterboxProbeTimestamp < 15000) {
+    return cachedChatterboxBaseUrl;
+  }
+  chatterboxProbeTimestamp = now;
+
+  const envUrl = (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_CHATTERBOX_URL) || '';
+  const isLocalHost = typeof window !== 'undefined' && (
+    window.location.hostname === 'localhost' ||
+    window.location.hostname === '127.0.0.1' ||
+    window.location.protocol === 'file:'
+  );
+
+  const candidates = [
+    envUrl ? envUrl.replace(/\/$/, '') : '',
+    isLocalHost ? CHATTERBOX_URL : '',
+    '/api/chatterbox',
+  ].filter(Boolean);
+
+  for (const base of candidates) {
+    try {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 1200);
+      const res = await fetch(`${base}/health`, { signal: controller.signal });
+      clearTimeout(timer);
+      if (res.ok) {
+        const data = await res.json().catch(() => null);
+        if (data && data.status === 'ok') {
+          cachedChatterboxBaseUrl = base;
+          return base;
+        }
+      }
+    } catch {
+      // Endpoint not available, try next or fall back to cloud-native synthesis
+    }
+  }
+
+  cachedChatterboxBaseUrl = null;
+  return null;
+};
+
 // ─── Local Chatterbox voice cloning chunk helper ──────────────────────────────
 const tryLocalChatterboxChunk = async (
   chunk: string,
   speechConfig: any
 ): Promise<Uint8Array | null> => {
   try {
+    const chatterboxBase = await resolveChatterboxEndpoint();
+    if (!chatterboxBase) return null;
+
     const cleanText = chunk.replace(/\[[^\]]*\]/g, '').replace(/<[^>]*>/g, '').trim();
     if (!cleanText) return null;
     let sampleName = 'fenrir_male.wav';
@@ -894,7 +942,7 @@ const tryLocalChatterboxChunk = async (
     fd.append('text', cleanText);
     fd.append('speed', '1.0');
 
-    const res = await fetch(`${CHATTERBOX_URL}/clone`, {
+    const res = await fetch(`${chatterboxBase}/clone`, {
       method: 'POST',
       body: fd,
     });
@@ -1737,12 +1785,73 @@ Script:
 };
 
 /**
- * Quality Zero-Shot Custom Voice Cloning using Gemini TTS Voice Replication
+ * Quality Zero-Shot Custom Voice Cloning & Voice-to-Voice Conversion
+ * Supports both Local/Container Chatterbox Neural Engine AND 100% Cloud-Native
+ * Browser Execution (Google Cloud Run / Cloudflare Pages) via Gemini Multimodal
+ * Vocal Fingerprinting + Multi-Model TTS Rotation + DSP Acoustic Profile Transfer.
  */
 interface CachedRefAudio {
   base64: string;
+  mimeType: string;
   profile: import('../utils/audio').AcousticVoiceProfile;
+  fingerprint: VoiceFingerprint;
 }
+
+const refVoiceCache = new Map<string, CachedRefAudio>();
+
+const getReferenceVoiceAnalysis = async (referenceAudioFile: File): Promise<CachedRefAudio> => {
+  const cacheKey = `${referenceAudioFile.name}_${referenceAudioFile.size}_${referenceAudioFile.lastModified}`;
+  if (refVoiceCache.has(cacheKey)) {
+    return refVoiceCache.get(cacheKey)!;
+  }
+
+  const { base64, acousticProfile } = await convertAudioFileTo24kMonoWav(referenceAudioFile);
+  const mimeType = 'audio/wav';
+
+  let fingerprint: VoiceFingerprint = {
+    gender: acousticProfile.detectedGender === VoiceGender.FEMALE ? 'warm female' : 'deep male',
+    pitch: `${Math.round(acousticProfile.pitchHz)} Hz (${acousticProfile.detectedGender === VoiceGender.FEMALE ? 'mid-high female' : 'resonant male'})`,
+    pace: 'moderate and natural',
+    energy: 'expressive and engaged',
+    tone: acousticProfile.timbreDescription,
+    accent: 'Indian English',
+    delivery: acousticProfile.acousticStyleDirective,
+    breathiness: acousticProfile.brightnessRatio > 0.65 ? 'crisp and airy' : 'warm full chest resonance',
+    emotionLabel: 'neutral',
+  };
+
+  try {
+    const fpPrompt = `Listen to this reference speaker audio clip carefully. Extract a precise VOCAL FINGERPRINT to replicate this exact speaker's voice timbre, pitch, cadence, and delivery style.
+Respond ONLY with a valid JSON object (no markdown, no backticks):
+{
+  "gender": "e.g. deep male / warm female",
+  "pitch": "e.g. low-pitched baritone / mid-range / high-pitched bright",
+  "pace": "e.g. slow and deliberate / moderate / brisk",
+  "energy": "e.g. calm and measured / high energy / commanding",
+  "tone": "e.g. warm velvet / authoritative / bright and crisp",
+  "accent": "e.g. Indian English / Tamil native / neutral international",
+  "delivery": "2-3 sentences describing the speaker's exact vocal tract timbre, resonance, and articulation style",
+  "breathiness": "e.g. breathy / clear chest voice / resonant",
+  "emotionLabel": "dominant emotion keyword"
+}`;
+    const resp = await withRetry(() => generateContentWithTextRotation([{
+      parts: [
+        { text: fpPrompt },
+        { inlineData: { mimeType, data: base64 } },
+      ],
+    }]), 2, 300);
+    const raw = resp.text?.trim() || '{}';
+    const jsonStr = raw.replace(/^```json\s*|^```\s*|```$/gim, '').trim();
+    const parsed = JSON.parse(jsonStr);
+    fingerprint = { ...fingerprint, ...parsed };
+  } catch (e) {
+    console.warn('[getReferenceVoiceAnalysis] Using DSP acoustic profile defaults:', e);
+  }
+
+  const cached: CachedRefAudio = { base64, mimeType, profile: acousticProfile, fingerprint };
+  refVoiceCache.set(cacheKey, cached);
+  return cached;
+};
 
 export const cloneVoiceZeroShot = async (
   script: string,
@@ -1760,90 +1869,100 @@ export const cloneVoiceZeroShot = async (
 
   const speedMultiplier = pacing === SpeechPacing.SLOW ? 0.85 : pacing === SpeechPacing.FAST ? 1.15 : 1.0;
 
-  // 1. Synthesize expressive base speech for the script text
-  let sourceBlob: Blob | null = null;
-  try {
-    const isRefFemale =
-      referenceAudioFile.name.toLowerCase().includes('female') ||
-      referenceAudioFile.name.toLowerCase().includes('woman') ||
-      referenceAudioFile.name.toLowerCase().includes('usha') ||
-      referenceAudioFile.name.toLowerCase().includes('anitha') ||
-      referenceAudioFile.name.toLowerCase().includes('girl');
+  // 1. Extract Acoustic Profile & Multimodal Vocal Fingerprint from Reference Audio
+  const refAnalysis = await getReferenceVoiceAnalysis(referenceAudioFile);
+  const { profile: acousticProfile, fingerprint } = refAnalysis;
 
-    const baseVoice: VoiceOption = isRefFemale
-      ? {
-          id: 'f_aoede_1',
-          name: 'Aoede',
-          gender: 'Female' as any,
-          apiVoiceName: 'Aoede',
-          persona: 'Base Female Voice',
-          tag: 'Base',
-          category: 'Standard',
-        }
-      : {
-          id: 'm_fenrir_1',
-          name: 'Fenrir',
-          gender: 'Male' as any,
-          apiVoiceName: 'Fenrir',
-          persona: 'Base Male Voice',
-          tag: 'Base',
-          category: 'Standard',
-        };
-
-    sourceBlob = await generateSpotAudio(
-      script,
-      baseVoice,
-      emotion,
-      dialect,
-      false,
-      undefined,
-      (curr, tot) => {
-        if (onProgress) onProgress(Math.min(2, Math.max(1, Math.round((curr / Math.max(1, tot)) * 2))), 4);
-      },
-      pacing
-    );
-  } catch (synthErr) {
-    console.warn('[cloneVoiceZeroShot] Gemini TTS base synthesis skipped; falling back to local synthesis:', synthErr);
-  }
+  const baseVoice: VoiceOption = {
+    id: `clone_${acousticProfile.matchedVoiceName.toLowerCase()}`,
+    name: acousticProfile.matchedVoiceName,
+    gender: acousticProfile.detectedGender,
+    apiVoiceName: acousticProfile.matchedVoiceName,
+    persona: `${fingerprint.gender}, ${fingerprint.tone}. ${fingerprint.delivery}`,
+    tag: 'Cloned',
+    category: 'Standard',
+  };
 
   if (onProgress) onProgress(2, 4);
 
-  const formData = new FormData();
-  formData.append('reference_audio', referenceAudioFile, referenceAudioFile.name);
-  formData.append('text', script.trim());
-  formData.append('speed', speedMultiplier.toString());
-  if (sourceBlob) {
-    formData.append('source_audio', sourceBlob, 'source.wav');
-  }
-
-  let response: Response;
-  try {
-    response = await fetch(`${CHATTERBOX_URL}/clone`, {
-      method: 'POST',
-      body: formData,
-    });
-  } catch (netErr: any) {
-    throw new Error(
-      `Chatterbox service is not running on ${CHATTERBOX_URL}. Please start the backend service using 'npm run server:clone' or './Start_Hypervox.command'`
-    );
-  }
-
-  if (!response.ok) {
-    let errDetail = '';
+  // 2. Check if Chatterbox Neural VC endpoint is reachable (Local or Cloud Run container)
+  const chatterboxBase = await resolveChatterboxEndpoint();
+  if (chatterboxBase) {
     try {
-      const errJson = await response.json();
-      errDetail = errJson.detail || JSON.stringify(errJson);
-    } catch {
-      errDetail = await response.text();
+      const sourceBlob = await generateSpotAudio(
+        script,
+        baseVoice,
+        emotion,
+        dialect,
+        false,
+        undefined,
+        undefined,
+        pacing
+      ).catch(() => null);
+
+      const formData = new FormData();
+      formData.append('reference_audio', referenceAudioFile, referenceAudioFile.name);
+      formData.append('text', script.trim());
+      formData.append('speed', speedMultiplier.toString());
+      if (sourceBlob) {
+        formData.append('source_audio', sourceBlob, 'source.wav');
+      }
+
+      const response = await fetch(`${chatterboxBase}/clone`, {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (response.ok) {
+        if (onProgress) onProgress(3, 4);
+        const audioBlob = await response.blob();
+        if (onProgress) onProgress(4, 4);
+        return audioBlob;
+      }
+    } catch (cbErr) {
+      console.warn('[cloneVoiceZeroShot] Chatterbox endpoint unavailable, executing Cloud-Native Acoustic Cloning:', cbErr);
     }
-    throw new Error(`Chatterbox cloning failed (${response.status}): ${errDetail}`);
   }
 
-  if (onProgress) onProgress(3, 4);
-  const audioBlob = await response.blob();
-  if (onProgress) onProgress(4, 4);
+  // 3. Cloud-Native Execution (Google Cloud Run & Cloudflare Pages):
+  //    Combine Reference Speaker Fingerprint + Acoustic Profile + Emotion/Dialect Context
+  const ai = getAI();
+  const basePromptContext = buildPromptContext(emotion, dialect, baseVoice, pacing);
+  const clonePromptContext = `${basePromptContext}
+VOICE CLONING DIRECTIVE — Replicate the reference speaker's exact vocal identity:
+- Speaker Gender & Pitch: ${fingerprint.gender}, ${fingerprint.pitch} (Fundamental ~${Math.round(acousticProfile.pitchHz)} Hz)
+- Vocal Timbre & Resonance: ${fingerprint.tone}, ${fingerprint.breathiness}, ${acousticProfile.timbreDescription}
+- Natural Cadence & Accent: ${fingerprint.pace}, ${fingerprint.accent}
+- Performance Signature: ${fingerprint.delivery}`;
 
-  return audioBlob;
+  const defaultAudioTag = EMOTION_AUDIO_TAGS[emotion] ?? `[${fingerprint.energy}, ${fingerprint.tone}]`;
+  const chunks = script.trim().length <= 450 ? [script.trim()] : splitIntoChunks(script.trim(), 450);
+  const speechConfig = {
+    voiceConfig: { prebuiltVoiceConfig: { voiceName: acousticProfile.matchedVoiceName } },
+  };
+
+  const pcmBuffers: Uint8Array[] = [];
+  for (let i = 0; i < chunks.length; i++) {
+    const taggedChunk = `${defaultAudioTag} ${chunks[i]}`;
+    const pcm = await withRetry((attempt) =>
+      synthesizeChunk(ai, taggedChunk, clonePromptContext, speechConfig, attempt)
+    );
+    pcmBuffers.push(pcm);
+    if (onProgress) onProgress(2 + Math.round(((i + 1) / chunks.length) * 1), 4);
+  }
+
+  const totalLen = pcmBuffers.reduce((acc, b) => acc + b.byteLength, 0);
+  const mergedPcm = new Uint8Array(totalLen);
+  let offset = 0;
+  for (const b of pcmBuffers) {
+    mergedPcm.set(b, offset);
+    offset += b.byteLength;
+  }
+
+  // Apply DSP Acoustic Profile Transfer (pitch ratio & spectral brightness envelope matching)
+  const transferredPcm = applyAcousticTransfer(mergedPcm, acousticProfile, 24000);
+  if (onProgress) onProgress(4, 4);
+  return pcmToWav(transferredPcm, 24000, 1);
 };
 
 export const convertVoiceToVoice = async (
@@ -1853,38 +1972,136 @@ export const convertVoiceToVoice = async (
   onProgress?: (current: number, total: number) => void
 ): Promise<Blob> => {
   if (onProgress) onProgress(1, 3);
-  const formData = new FormData();
-  formData.append('source_audio', sourceAudioBlobOrFile, 'source.wav');
-  formData.append('reference_audio', referenceAudioFile, referenceAudioFile.name);
-  formData.append('speed', speed.toString());
+
+  // 1. Try Chatterbox Neural VC endpoint first if reachable (Local or Cloud Run container)
+  const chatterboxBase = await resolveChatterboxEndpoint();
+  if (chatterboxBase) {
+    try {
+      const formData = new FormData();
+      formData.append('source_audio', sourceAudioBlobOrFile, 'source.wav');
+      formData.append('reference_audio', referenceAudioFile, referenceAudioFile.name);
+      formData.append('speed', speed.toString());
+
+      if (onProgress) onProgress(2, 3);
+      const response = await fetch(`${chatterboxBase}/vc`, {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (response.ok) {
+        if (onProgress) onProgress(3, 3);
+        return await response.blob();
+      }
+    } catch (cbErr) {
+      console.warn('[convertVoiceToVoice] Chatterbox endpoint unavailable, executing Cloud-Native Voice-to-Voice Conversion:', cbErr);
+    }
+  }
+
+  // 2. Cloud-Native Voice-to-Voice Conversion (Google Cloud Run & Cloudflare Pages):
+  //    Extract reference speaker acoustic profile & fingerprint + transcribe source audio with prosody
+  const refAnalysis = await getReferenceVoiceAnalysis(referenceAudioFile);
+  const { profile: acousticProfile, fingerprint: refFingerprint } = refAnalysis;
+
+  const sourceFile = sourceAudioBlobOrFile instanceof File
+    ? sourceAudioBlobOrFile
+    : new File([sourceAudioBlobOrFile], 'source.wav', { type: sourceAudioBlobOrFile.type || 'audio/wav' });
+
+  const [sourceBase64, sourceDuration] = await Promise.all([
+    blobToBase64(sourceFile),
+    getAudioDurationFromFile(sourceFile).catch(() => 0),
+  ]);
+  const sourceMimeType = sourceFile.type || 'audio/wav';
+
+  const vcPrompt = `Listen to this source audio clip carefully.
+1. Transcribe the exact spoken words verbatim in their original script/language (no timestamps, no speaker labels).
+2. Describe the source speaker's emotional delivery, energy, and rhythm so it can be re-performed by a target voice actor.
+Respond ONLY with valid JSON (no markdown, no backticks):
+{
+  "transcript": "verbatim spoken text",
+  "emotionTag": "concise acting tag e.g. energetic and expressive, warm conversational, dramatic",
+  "deliveryNotes": "1-2 sentences on rhythm, emphasis, and emotional inflection"
+}`;
+
+  let transcript = '';
+  let emotionTag = `${refFingerprint.energy}, ${refFingerprint.tone}`;
+  let deliveryNotes = refFingerprint.delivery;
+
+  try {
+    const resp = await withRetry(() => generateContentWithTextRotation([{
+      parts: [
+        { text: vcPrompt },
+        { inlineData: { mimeType: sourceMimeType, data: sourceBase64 } },
+      ],
+    }]));
+    const raw = resp.text?.trim() || '{}';
+    const jsonStr = raw.replace(/^```json\s*|^```\s*|```$/gim, '').trim();
+    const parsed = JSON.parse(jsonStr);
+    if (parsed.transcript) transcript = String(parsed.transcript).trim();
+    if (parsed.emotionTag) emotionTag = String(parsed.emotionTag).trim();
+    if (parsed.deliveryNotes) deliveryNotes = String(parsed.deliveryNotes).trim();
+  } catch {
+    const fallbackResp = await withRetry(() => generateContentWithTextRotation([{
+      parts: [
+        { text: 'Transcribe this audio verbatim. Output only the spoken words with no extra text.' },
+        { inlineData: { mimeType: sourceMimeType, data: sourceBase64 } },
+      ],
+    }]));
+    transcript = fallbackResp.text?.trim() || '';
+  }
+
+  if (!transcript) {
+    throw new Error('Could not extract speech from the source audio for voice conversion.');
+  }
 
   if (onProgress) onProgress(2, 3);
 
-  let response: Response;
-  try {
-    response = await fetch(`${CHATTERBOX_URL}/vc`, {
-      method: 'POST',
-      body: formData,
-    });
-  } catch (netErr: any) {
-    throw new Error(
-      `Chatterbox service is not running on ${CHATTERBOX_URL}. Please start the backend service using 'npm run server:clone' or './Start_Hypervox.command'`
+  const ai = getAI();
+  const vcContext = `VOICE-TO-VOICE CONVERSION DIRECTIVE:
+Re-perform the source script in the exact vocal identity of the target reference speaker:
+- Target Gender & Fundamental Pitch: ${refFingerprint.gender}, ${refFingerprint.pitch} (~${Math.round(acousticProfile.pitchHz)} Hz)
+- Target Vocal Timbre & Resonance: ${refFingerprint.tone}, ${refFingerprint.breathiness}, ${acousticProfile.timbreDescription}
+- Target Accent: ${refFingerprint.accent}
+- Source Prosody & Inflection to Preserve: ${deliveryNotes}
+Deliver strictly in ONE single consistent voice (${acousticProfile.matchedVoiceName}). Never read bracketed instructions aloud.`;
+
+  const chunks = transcript.length <= 500 ? [transcript] : splitIntoChunks(transcript, 500);
+  const speechConfig = {
+    voiceConfig: { prebuiltVoiceConfig: { voiceName: acousticProfile.matchedVoiceName } },
+  };
+
+  const pcmBuffers: Uint8Array[] = [];
+  for (let i = 0; i < chunks.length; i++) {
+    const taggedChunk = `[${emotionTag}] ${chunks[i]}`;
+    const pcm = await withRetry((attempt) =>
+      synthesizeChunk(ai, taggedChunk, vcContext, speechConfig, attempt)
     );
+    pcmBuffers.push(pcm);
   }
 
-  if (!response.ok) {
-    let errDetail = '';
-    try {
-      const errJson = await response.json();
-      errDetail = errJson.detail || JSON.stringify(errJson);
-    } catch {
-      errDetail = await response.text();
+  const totalLen = pcmBuffers.reduce((acc, b) => acc + b.byteLength, 0);
+  const mergedPcm = new Uint8Array(totalLen);
+  let offset = 0;
+  for (const b of pcmBuffers) {
+    mergedPcm.set(b, offset);
+    offset += b.byteLength;
+  }
+
+  // Apply target reference speaker's acoustic pitch & spectral envelope transfer
+  let finalPcm = applyAcousticTransfer(mergedPcm, acousticProfile, 24000);
+
+  // Lock duration to source audio duration adjusted by speed multiplier
+  const actualDuration = (finalPcm.byteLength / 2) / 24000;
+  if (sourceDuration > 0.3 && actualDuration > 0.3) {
+    const targetSecs = sourceDuration / Math.max(0.5, Math.min(2.0, speed));
+    if (Math.abs(actualDuration - targetSecs) > 0.15) {
+      finalPcm = stretchPcmToTargetDuration(finalPcm, actualDuration, targetSecs, 24000);
     }
-    throw new Error(`Chatterbox Voice-to-Voice conversion failed (${response.status}): ${errDetail}`);
+  } else if (Math.abs(speed - 1.0) > 0.04 && actualDuration > 0.2) {
+    finalPcm = stretchPcmToTargetDuration(finalPcm, actualDuration, actualDuration / speed, 24000);
   }
 
   if (onProgress) onProgress(3, 3);
-  return await response.blob();
+  return pcmToWav(finalPcm, 24000, 1);
 };
 
 // ─── Audio Story Creator ──────────────────────────────────────────────────────
