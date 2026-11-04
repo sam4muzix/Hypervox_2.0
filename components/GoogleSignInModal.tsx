@@ -15,25 +15,14 @@ interface GoogleSignInModalProps {
   onSuccess: (user: UserProfile) => void;
 }
 
-const COUNTRY_CODES = [
-  { code: '+91', label: '🇮🇳 +91 (IN)' },
-  { code: '+1', label: '🇺🇸 +1 (US)' },
-  { code: '+44', label: '🇬🇧 +44 (UK)' },
-  { code: '+971', label: '🇦🇪 +971 (UAE)' },
-  { code: '+65', label: '🇸🇬 +65 (SG)' },
-  { code: '+60', label: '🇲🇾 +60 (MY)' },
-  { code: '+61', label: '🇦🇺 +61 (AU)' },
-];
-
 export const GoogleSignInModal: React.FC<GoogleSignInModalProps> = ({
   isOpen,
   onClose,
   onSuccess,
 }) => {
-  const [step, setStep] = useState<'phone' | 'otp' | 'password'>('phone');
+  const [step, setStep] = useState<'email' | 'otp' | 'password'>('email');
   const [name, setName] = useState('');
-  const [countryCode, setCountryCode] = useState('+91');
-  const [phoneNumber, setPhoneNumber] = useState('');
+  const [email, setEmail] = useState('');
   const [otpDigits, setOtpDigits] = useState<string[]>(['', '', '', '', '', '']);
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -47,7 +36,7 @@ export const GoogleSignInModal: React.FC<GoogleSignInModalProps> = ({
 
   useEffect(() => {
     if (isOpen) {
-      setStep('phone');
+      setStep('email');
       setOtpDigits(['', '', '', '', '', '']);
       setPassword('');
       setShowPassword(false);
@@ -66,27 +55,26 @@ export const GoogleSignInModal: React.FC<GoogleSignInModalProps> = ({
 
   if (!isOpen) return null;
 
-  const cleanDigits = phoneNumber.replace(/\D/g, '');
-  const fullPhone = `${countryCode}${cleanDigits}`;
+  const normalizedEmail = email.trim().toLowerCase();
 
   const handleSendOtp = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     setErrorMsg(null);
 
-    if (cleanDigits.length < 7 || cleanDigits.length > 15) {
-      setErrorMsg('Please enter a valid mobile phone number (10 digits).');
+    if (!normalizedEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
+      setErrorMsg('Please enter a valid email address.');
       return;
     }
 
     setIsSubmitting(true);
-    setStatusMessage('Dispatching 6-digit OTP to your phone...');
+    setStatusMessage('Sending 6-digit OTP to your email...');
 
-    const res = await sendPhoneOtp(fullPhone, name.trim() || undefined);
+    const res = await sendPhoneOtp(normalizedEmail, name.trim() || undefined);
     setIsSubmitting(false);
 
     if (!res.success) {
       setStatusMessage(null);
-      setErrorMsg(res.message || 'Could not send OTP. Please try again.');
+      setErrorMsg(res.message || 'Could not send Email OTP. Please try again.');
       return;
     }
 
@@ -143,7 +131,7 @@ export const GoogleSignInModal: React.FC<GoogleSignInModalProps> = ({
     setIsSubmitting(true);
     setStatusMessage('Verifying OTP...');
 
-    const verification = await verifyPhoneOtp(fullPhone, enteredOtp);
+    const verification = await verifyPhoneOtp(normalizedEmail, enteredOtp);
     setIsSubmitting(false);
 
     if (!verification.valid) {
@@ -152,10 +140,9 @@ export const GoogleSignInModal: React.FC<GoogleSignInModalProps> = ({
       return;
     }
 
-    // OTP Verified -> Transition to Step 3: Studio Password Gate
     setPassword('');
     setErrorMsg(null);
-    setStatusMessage('OTP verified! Please enter the studio access password.');
+    setStatusMessage('Email OTP verified! Please enter the studio access password.');
     setStep('password');
     setTimeout(() => {
       passwordInputRef.current?.focus();
@@ -179,13 +166,13 @@ export const GoogleSignInModal: React.FC<GoogleSignInModalProps> = ({
     setIsSubmitting(true);
     setStatusMessage('Access granted! Initializing 24-hour studio session...');
 
-    const displayName = name.trim() || `User ${cleanDigits.slice(-4)}`;
+    const displayName = name.trim() || normalizedEmail.split('@')[0] || 'Verified User';
     const now = Date.now();
     const user: UserProfile = {
-      id: `phone_${cleanDigits}_${now}`,
+      id: `email_${now}`,
       name: displayName,
-      phone: fullPhone,
-      email: fullPhone,
+      phone: normalizedEmail,
+      email: normalizedEmail,
       phoneVerified: true,
       passwordVerified: true,
       picture: `https://ui-avatars.com/api/?name=${encodeURIComponent(displayName)}&background=10b981&color=000&bold=true`,
@@ -223,8 +210,8 @@ export const GoogleSignInModal: React.FC<GoogleSignInModalProps> = ({
 
         {/* Step Progress Indicator */}
         <div className="flex items-center justify-center gap-2 relative z-10">
-          {(['phone', 'otp', 'password'] as const).map((s, idx) => {
-            const stepIndex = step === 'phone' ? 0 : step === 'otp' ? 1 : 2;
+          {(['email', 'otp', 'password'] as const).map((s, idx) => {
+            const stepIndex = step === 'email' ? 0 : step === 'otp' ? 1 : 2;
             const isCompleted = idx < stepIndex;
             const isCurrent = idx === stepIndex;
             return (
@@ -239,7 +226,7 @@ export const GoogleSignInModal: React.FC<GoogleSignInModalProps> = ({
                   }`}
                 >
                   <span>{isCompleted ? '✓' : idx + 1}</span>
-                  <span>{s === 'phone' ? 'Phone' : s === 'otp' ? 'OTP' : 'Password'}</span>
+                  <span>{s === 'email' ? 'Email' : s === 'otp' ? 'OTP' : 'Password'}</span>
                 </div>
                 {idx < 2 && <div className="w-4 h-px bg-emerald-500/30" />}
               </React.Fragment>
@@ -263,7 +250,7 @@ export const GoogleSignInModal: React.FC<GoogleSignInModalProps> = ({
                 <path
                   strokeLinecap="round"
                   strokeLinejoin="round"
-                  d="M10.5 1.5H8.25A2.25 2.25 0 006 3.75v16.5a2.25 2.25 0 002.25 2.25h7.5A2.25 2.25 0 0018 20.25V3.75a2.25 2.25 0 00-2.25-2.25H13.5m-3 0V3h3V1.5m-3 0h3m-3 18.75h3"
+                  d="M21.75 6.75v10.5a2.25 2.25 0 01-2.25 2.25h-15a2.25 2.25 0 01-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25m19.5 0v.243a2.25 2.25 0 01-1.07 1.916l-7.5 4.615a2.25 2.25 0 01-2.36 0L3.32 8.91a2.25 2.25 0 01-1.07-1.916V6.75"
                 />
               </svg>
             )}
@@ -272,23 +259,23 @@ export const GoogleSignInModal: React.FC<GoogleSignInModalProps> = ({
           <div className="inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-[10px] font-mono font-bold text-emerald-400 uppercase tracking-widest">
             <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
             <span>
-              {step === 'password' ? 'Step 3 · Master Password Gate' : 'Phone OTP Security Gate'}
+              {step === 'password' ? 'Step 3 · Master Password Gate' : 'Email OTP Security Gate'}
             </span>
           </div>
 
           <h2 className="text-2xl sm:text-3xl font-black text-white tracking-tight">
-            {step === 'phone'
-              ? 'Verify Your Phone'
+            {step === 'email'
+              ? 'Verify Your Email'
               : step === 'otp'
               ? 'Enter 6-Digit OTP'
               : 'Studio Password Access'}
           </h2>
           <p className="text-xs sm:text-sm text-gray-300 max-w-xs mx-auto leading-relaxed">
-            {step === 'phone'
-              ? 'HyperVox Studio requires mobile OTP & master password verification before granting access.'
+            {step === 'email'
+              ? 'HyperVox Studio requires Email OTP & master password verification before granting access.'
               : step === 'otp'
-              ? `Enter the 6-digit verification code dispatched to ${fullPhone}`
-              : `OTP verified for ${fullPhone}. Enter the case-sensitive studio access password to unlock for 24 hours.`}
+              ? `Enter the 6-digit verification code sent to ${normalizedEmail}`
+              : `Email OTP verified for ${normalizedEmail}. Enter the case-sensitive studio access password to unlock for 24 hours.`}
           </p>
         </div>
 
@@ -299,7 +286,7 @@ export const GoogleSignInModal: React.FC<GoogleSignInModalProps> = ({
           </div>
         )}
 
-        {step === 'phone' && (
+        {step === 'email' && (
           <form onSubmit={handleSendOtp} className="space-y-4 relative z-10">
             <div className="space-y-1.5 text-left">
               <label className="block text-xs font-mono font-bold text-gray-300 uppercase tracking-wider">
@@ -316,30 +303,16 @@ export const GoogleSignInModal: React.FC<GoogleSignInModalProps> = ({
 
             <div className="space-y-1.5 text-left">
               <label className="block text-xs font-mono font-bold text-gray-300 uppercase tracking-wider">
-                Mobile Phone Number *
+                Email Address *
               </label>
-              <div className="flex gap-2">
-                <select
-                  value={countryCode}
-                  onChange={(e) => setCountryCode(e.target.value)}
-                  className="bg-black/70 border border-white/15 focus:border-emerald-400 rounded-xl px-3 py-3 text-xs sm:text-sm font-mono text-white focus:outline-none cursor-pointer"
-                >
-                  {COUNTRY_CODES.map((c) => (
-                    <option key={c.code} value={c.code} className="bg-[#07120c] text-white">
-                      {c.label}
-                    </option>
-                  ))}
-                </select>
-                <input
-                  type="tel"
-                  required
-                  value={phoneNumber}
-                  onChange={(e) => setPhoneNumber(e.target.value.replace(/[^\d\s-]/g, ''))}
-                  placeholder="98765 43210"
-                  maxLength={15}
-                  className="flex-1 bg-black/60 border border-white/15 focus:border-emerald-400 rounded-xl px-4 py-3 text-sm font-mono tracking-wider text-white placeholder-gray-500 focus:outline-none transition-all"
-                />
-              </div>
+              <input
+                type="email"
+                required
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="you@example.com"
+                className="w-full bg-black/60 border border-white/15 focus:border-emerald-400 rounded-xl px-4 py-3 text-sm font-mono text-white placeholder-gray-500 focus:outline-none transition-all"
+              />
             </div>
 
             <div className="p-2.5 rounded-xl bg-white/[0.03] border border-white/10 text-[11px] font-mono text-gray-400 text-center">
@@ -385,12 +358,12 @@ export const GoogleSignInModal: React.FC<GoogleSignInModalProps> = ({
               <button
                 type="button"
                 onClick={() => {
-                  setStep('phone');
+                  setStep('email');
                   setErrorMsg(null);
                 }}
                 className="text-gray-400 hover:text-white underline cursor-pointer transition-colors"
               >
-                ← Change Phone Number
+                ← Change Email Address
               </button>
 
               <button
@@ -420,7 +393,7 @@ export const GoogleSignInModal: React.FC<GoogleSignInModalProps> = ({
           <form onSubmit={handleVerifyPassword} className="space-y-5 relative z-10">
             <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 flex items-center gap-2.5 text-xs text-emerald-300 font-mono">
               <span className="w-2 h-2 rounded-full bg-emerald-400 flex-shrink-0" />
-              <span>Phone {fullPhone} OTP Verified ✓</span>
+              <span className="truncate">Email {normalizedEmail} Verified ✓</span>
             </div>
 
             <div className="space-y-2 text-left">

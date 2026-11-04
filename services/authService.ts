@@ -201,14 +201,13 @@ const getOtpApiUrl = (): string => {
 };
 
 /**
- * Dispatch a real 6-digit SMS OTP to the given phone number via the backend SMS gateway (/api/otp).
- * Strictly no client-side mockup OTP preview.
+ * Dispatch a real 6-digit Email OTP to the given email address via the backend (/api/otp).
  */
 export const sendPhoneOtp = async (
-  fullPhone: string,
+  emailOrPhone: string,
   name?: string
 ): Promise<{ success: boolean; message: string }> => {
-  const normalizedPhone = fullPhone.replace(/\s+/g, '').trim();
+  const normalizedTarget = emailOrPhone.trim().toLowerCase();
 
   try {
     const res = await fetch(getOtpApiUrl(), {
@@ -216,7 +215,8 @@ export const sendPhoneOtp = async (
       headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
       body: JSON.stringify({
         action: 'send',
-        phone: normalizedPhone,
+        email: normalizedTarget,
+        phone: normalizedTarget,
         name: name || 'HyperVox User',
       }),
     });
@@ -225,30 +225,30 @@ export const sendPhoneOtp = async (
     if (res.ok && data && data.success) {
       return {
         success: true,
-        message: data.message || `6-digit OTP sent via SMS to ${normalizedPhone}`,
+        message: data.message || `6-digit OTP sent to ${normalizedTarget}`,
       };
     }
 
     return {
       success: false,
-      message: (data && data.message) || 'Failed to deliver SMS OTP. Please check your phone number.',
+      message: (data && data.message) || 'Failed to deliver Email OTP. Please check your email address.',
     };
   } catch (err: any) {
     return {
       success: false,
-      message: err?.message || 'Network error while contacting SMS OTP gateway.',
+      message: err?.message || 'Network error while contacting Email OTP gateway.',
     };
   }
 };
 
 /**
- * Verify the 6-digit SMS OTP code entered by the user against the backend (/api/otp).
+ * Verify the 6-digit Email OTP code entered by the user against the backend (/api/otp).
  */
 export const verifyPhoneOtp = async (
-  fullPhone: string,
+  emailOrPhone: string,
   enteredOtp: string
 ): Promise<{ valid: boolean; error?: string }> => {
-  const normalizedPhone = fullPhone.replace(/\s+/g, '').trim();
+  const normalizedTarget = emailOrPhone.trim().toLowerCase();
   const cleanOtp = enteredOtp.replace(/\D/g, '').trim();
 
   if (cleanOtp.length !== 6) {
@@ -261,7 +261,8 @@ export const verifyPhoneOtp = async (
       headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
       body: JSON.stringify({
         action: 'verify',
-        phone: normalizedPhone,
+        email: normalizedTarget,
+        phone: normalizedTarget,
         otp: cleanOtp,
       }),
     });
@@ -271,7 +272,7 @@ export const verifyPhoneOtp = async (
     }
     return {
       valid: false,
-      error: (data && data.error) || 'Invalid or expired OTP code. Please check your SMS and try again.',
+      error: (data && data.error) || 'Invalid or expired OTP code. Please check your email and try again.',
     };
   } catch {
     return { valid: false, error: 'Network error verifying OTP. Please try again.' };
