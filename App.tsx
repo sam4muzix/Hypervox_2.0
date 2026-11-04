@@ -3,6 +3,10 @@ import TtsPanel from './components/TtsPanel';
 import StoryPanel from './components/StoryPanel';
 import DubbingPanel from './components/DubbingPanel';
 import TranscribeTranslatePanel from './components/TranscribeTranslatePanel';
+import HypervoxIntro from './components/HypervoxIntro';
+import { IntroModal } from './components/IntroModal';
+import GoogleSignInModal from './components/GoogleSignInModal';
+import { getCurrentUser, logoutUser, type UserProfile } from './services/authService';
 
 enum Tab {
   TTS = 'Neural TTS',
@@ -44,10 +48,42 @@ const TAB_ICONS: Record<Tab, React.ReactNode> = {
 const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<Tab>(Tab.TTS);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
+  const [showIntro, setShowIntro] = useState(true);
+  const [currentUser, setCurrentUser] = useState<UserProfile | null>(() => getCurrentUser());
+  const [showOtpModal, setShowOtpModal] = useState(false);
+  const [isGuideOpen, setIsGuideOpen] = useState(false);
+
+  // 1. Cosmic Intro Screen first; clicking Enter triggers Phone OTP Verification if not verified
+  if (showIntro || !currentUser || !currentUser.phoneVerified) {
+    return (
+      <>
+        <HypervoxIntro
+          onEnter={() => {
+            if (currentUser && currentUser.phoneVerified) {
+              setShowIntro(false);
+            } else {
+              setShowOtpModal(true);
+            }
+          }}
+        />
+        <GoogleSignInModal
+          isOpen={showOtpModal}
+          onClose={() => setShowOtpModal(false)}
+          onSuccess={(user) => {
+            setCurrentUser(user);
+            setShowOtpModal(false);
+            setShowIntro(false);
+          }}
+        />
+      </>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-[#050a07] text-gray-100 font-sans selection:bg-emerald-500/30 selection:text-white relative overflow-x-hidden">
-      
+      {/* Studio Feature Guide Modal */}
+      <IntroModal isOpen={isGuideOpen} onClose={() => setIsGuideOpen(false)} />
+
       {/* Background Emerald Fluid Ambient Glows */}
       <div className="fixed top-[-120px] left-[20%] w-[650px] h-[650px] bg-emerald-600/10 rounded-full blur-[160px] pointer-events-none z-0"></div>
       <div className="fixed top-[300px] right-[10%] w-[600px] h-[600px] bg-emerald-500/10 rounded-full blur-[170px] pointer-events-none z-0"></div>
@@ -55,19 +91,31 @@ const App: React.FC = () => {
       {/* Floating Green-Tinted Liquid Glass Header */}
       <header className="sticky top-0 z-40 backdrop-blur-3xl bg-[#050a07]/60 border-b border-emerald-500/20 select-none">
         <div className="max-w-[1800px] mx-auto px-6 h-20 flex items-center justify-between relative">
-          
-          {/* Left: Studio Modules Drawer Button */}
-          <button
-            onClick={() => setIsDrawerOpen(true)}
-            className="flex items-center gap-2.5 px-4 py-2 rounded-xl bg-emerald-950/40 hover:bg-emerald-900/60 border border-emerald-500/30 hover:border-emerald-400 transition-all text-xs font-semibold text-gray-200 shadow-sm"
-          >
-            <svg className="w-4 h-4 text-emerald-400" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6h16.5M3.75 12h16.5m-16.5 6h16.5" />
-            </svg>
-            <span>Studio Modules</span>
-          </button>
+          {/* Left: Studio Modules Drawer & Guide Buttons */}
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => setIsDrawerOpen(true)}
+              className="flex items-center gap-2.5 px-4 py-2 rounded-xl bg-emerald-950/40 hover:bg-emerald-900/60 border border-emerald-500/30 hover:border-emerald-400 transition-all text-xs font-semibold text-gray-200 shadow-sm cursor-pointer"
+            >
+              <svg className="w-4 h-4 text-emerald-400" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6h16.5M3.75 12h16.5m-16.5 6h16.5" />
+              </svg>
+              <span>Studio Modules</span>
+            </button>
 
-          {/* Center Title strictly: Big HyperVox + by Greenmix Labs Subtitle */}
+            <button
+              onClick={() => setIsGuideOpen(true)}
+              className="flex items-center gap-2 px-3 py-2 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-xs font-semibold text-gray-300 hover:text-white transition-all cursor-pointer"
+              title="Open Feature Guide"
+            >
+              <svg className="w-4 h-4 text-emerald-400" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M11.25 11.25l.041-.02a.75.75 0 011.063.852l-.708 2.836a.75.75 0 001.063.853l.041-.021M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9-3.75h.008v.008H12V8.25z" />
+              </svg>
+              <span className="hidden sm:inline">Guide</span>
+            </button>
+          </div>
+
+          {/* Center Title: Big HyperVox + by Greenmix Labs Subtitle */}
           <div className="absolute left-1/2 -translate-x-1/2 text-center pointer-events-none flex flex-col items-center">
             <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-white leading-none">
               HyperVox
@@ -77,21 +125,37 @@ const App: React.FC = () => {
             </span>
           </div>
 
-          {/* Right: Spacer for symmetry */}
-          <div className="w-28 hidden sm:block"></div>
+          {/* Right: Verified Phone User Badge & Sign Out */}
+          <div className="flex items-center gap-2.5">
+            <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/5 border border-emerald-500/30">
+              <span className="w-2 h-2 rounded-full bg-emerald-400 shadow-[0_0_8px_#34d399]" />
+              <span className="text-xs font-mono font-medium text-white max-w-[130px] truncate hidden sm:inline">
+                {currentUser.phone || currentUser.name}
+              </span>
+              <button
+                onClick={() => {
+                  logoutUser();
+                  setCurrentUser(null);
+                  setShowIntro(true);
+                }}
+                className="text-[10px] font-mono text-gray-400 hover:text-red-400 uppercase tracking-wider ml-1 cursor-pointer transition-colors"
+                title="Sign out of HyperVox"
+              >
+                Sign Out
+              </button>
+            </div>
+          </div>
         </div>
       </header>
 
       {/* ── Slide-Out Green-Tinted Liquid Glass Studio Modules Drawer Modal ───── */}
       {isDrawerOpen && (
         <div className="fixed inset-0 z-50 flex">
-          {/* Backdrop Blur Overlay */}
-          <div 
-            onClick={() => setIsDrawerOpen(false)} 
+          <div
+            onClick={() => setIsDrawerOpen(false)}
             className="fixed inset-0 bg-black/60 backdrop-blur-md transition-opacity"
           />
 
-          {/* Drawer Panel */}
           <div className="relative w-full max-w-sm bg-[#081810]/95 backdrop-blur-3xl border-r border-emerald-500/30 h-full p-6 flex flex-col justify-between shadow-2xl z-10 animate-slide-drawer">
             <div className="space-y-6">
               <div className="flex items-center justify-between border-b border-emerald-500/20 pb-4">
@@ -108,7 +172,7 @@ const App: React.FC = () => {
                 </div>
                 <button
                   onClick={() => setIsDrawerOpen(false)}
-                  className="p-1.5 rounded-lg text-gray-400 hover:text-white hover:bg-white/10 transition-colors"
+                  className="p-1.5 rounded-lg text-gray-400 hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
                 >
                   <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
@@ -127,7 +191,7 @@ const App: React.FC = () => {
                         setIsDrawerOpen(false);
                       }}
                       className={`
-                        w-full p-3.5 rounded-2xl text-left transition-all flex items-start gap-3.5 border text-xs font-semibold
+                        w-full p-3.5 rounded-2xl text-left transition-all flex items-start gap-3.5 border text-xs font-semibold cursor-pointer
                         ${isActive
                           ? 'bg-emerald-500/20 border-emerald-500 text-white shadow-lg shadow-emerald-500/10'
                           : 'bg-white/[0.03] border-white/5 text-gray-300 hover:bg-emerald-500/10 hover:border-emerald-500/30'
