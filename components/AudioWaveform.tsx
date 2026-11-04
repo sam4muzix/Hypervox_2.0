@@ -6,6 +6,10 @@ interface AudioWaveformProps {
   onSliceChanged?: (slicedFile: File, startSec: number, endSec: number) => void;
 }
 
+const MIN_SELECTION_SEC = 3.0;
+const MAX_SELECTION_SEC = 6.0;
+const DEFAULT_SELECTION_SEC = 4.5;
+
 export const AudioWaveform: React.FC<AudioWaveformProps> = ({ file, onSliceChanged }) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [audioBuffer, setAudioBuffer] = useState<AudioBuffer | null>(null);
@@ -23,83 +27,12 @@ export const AudioWaveform: React.FC<AudioWaveformProps> = ({ file, onSliceChang
   const playbackStartTimeRef = useRef<number>(0);
   const playbackStartOffsetRef = useRef<number>(0);
 
-  // Decode audio data into AudioBuffer
-  useEffect(() => {
-    let isCancelled = false;
-    const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
-    const ctx = new AudioCtx();
-    audioCtxRef.current = ctx;
-
-    file.arrayBuffer().then((buffer) => {
-      ctx.decodeAudioData(
-        buffer,
-        (decoded) => {
-          if (isCancelled) return;
-          setAudioBuffer(decoded);
-          const dur = decoded.duration;
-          setDuration(dur);
-          setStartSec(0);
-          // Default selection to either entire audio or up to 15 seconds
-          const initialEnd = Math.min(dur, Math.max(3, Math.min(dur, 15)));
-          setEndSec(initialEnd);
-        },
-        (err) => console.error('[Waveform] Decode error:', err)
-      );
-    });
-
-    return () => {
-      isCancelled = true;
-      if (sourceNodeRef.current) {
-        try { sourceNodeRef.current.stop(); } catch {}
-      }
-      if (audioCtxRef.current && audioCtxRef.current.state !== 'closed') {
-        try { audioCtxRef.current.close(); } catch {}
-      }
-      if (playbackAnimRef.current) {
-        cancelAnimationFrame(playbackAnimRef.current);
-      }
-    };
-  }, [file]);
-
-  // Create and notify sliced file when range changes
-  const sliceAndNotify = useCallback((start: number, end: number, buffer: AudioBuffer) => {
-    const sampleRate = buffer.sampleRate;
-    const startOffset = Math.max(0, Math.floor(start * sampleRate));
-    const endOffset = Math.min(buffer.length, Math.floor(end * sampleRate));
-    const frameCount = Math.max(1, endOffset - startOffset);
-
-    const numChannels = buffer.numberOfChannels;
-    const monoSamples = new Float32Array(frameCount);
-
-    for (let ch = 0; ch < numChannels; ch++) {
-      const channelData = buffer.getChannelData(ch);
-      for (let i = 0; i < frameCount; i++) {
-        monoSamples[i] += channelData[startOffset + i] / numChannels;
-      }
-    }
-
-    const pcmBytes = new Uint8Array(frameCount * 2);
-    const dataView = new DataView(pcmBytes.buffer);
-    for (let i = 0; i < frameCount; i++) {
-      const s = Math.max(-1, Math.min(1, monoSamples[i]));
-      dataView.setInt16(i * 2, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
-    }
-
-    const wavBlob = pcmToWav(pcmBytes, sampleRate, 1);
-    const slicedFile = new File([wavBlob], `selected_${file.name.replace(/\.[^.]+$/, '')}.wav`, { type: 'audio/wav' });
-    onSliceChanged?.(slicedFile, start, end);
-  }, [file.name, onSliceChanged]);
-
-  useEffect(() => {
-    if (audioBuffer && endSec > startSec) {
-      sliceAndNotify(startSec, endSec, audioBuffer);
-    }
-  }, [audioBuffer, startSec, endSec, sliceAndNotify]);
-
-  // Stop playback
+  // Stop playback cleanly
   const stopPlayback = useCallback(() => {
     if (sourceNodeRef.current) {
-      try { sourceNodeRef.current.stop(); } catch {}
+      try {
+        sourceNodeRef.current.stop();
+      } catch {}
       sourceNodeRef.current = null;
     }
     if (playbackAnimRef.current) {
@@ -109,14 +42,11 @@ export const AudioWaveform: React.FC<AudioWaveformProps> = ({ file, onSliceChang
     setIsPlaying(false);
   }, []);
 
-  // Play selected slice or pause
-  const togglePlaySelected = useCallback(() => {
+  // Play ONLY the selected slice [startSec, endSec]
+  const playSelectedSlice = useCallback(() => {
     if (!audioBuffer) return;
 
-    if (isPlaying) {
-      stopPlayback();
-      return;
-    }
+    stopPlayback();
 
     let ctx = audioCtxRef.current;
     if (!ctx || ctx.state === 'closed') {
@@ -161,9 +91,94 @@ export const AudioWaveform: React.FC<AudioWaveformProps> = ({ file, onSliceChang
         cancelAnimationFrame(playbackAnimRef.current);
       }
     };
-  }, [audioBuffer, isPlaying, startSec, endSec, stopPlayback]);
+  }, [audioBuffer, startSec, endSec, stopPlayback]);
 
-  // Draw waveform
+  // Decode audio data into AudioBuffer and initialize 3 to 6 sec selection window
+  useEffect(() => {
+    let isCancelled = false;
+    const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+    const ctx = new AudioCtx();
+    audioCtxRef.current = ctx;
+
+    file.arrayBuffer().then((buffer) => {
+      ctx.decodeAudioData(
+        buffer,
+        (decoded) => {
+          if (isCancelled) return;
+          setAudioBuffer(decoded);
+          const dur = decoded.duration;
+          setDuration(dur);
+
+          // Default selection to 3-6 seconds (default 4.5s)
+          const initialLen = Math.min(dur, Math.max(Math.min(dur, MIN_SELECTION_SEC), DEFAULT_SELECTION_SEC));
+          setStartSec(0);
+          setEndSec(initialLen);
+        },
+        (err) => console.error('[Waveform] Decode error:', err)
+      );
+    });
+
+    return () => {
+      isCancelled = true;
+      stopPlayback();
+      if (audioCtxRef.current && audioCtxRef.current.state !== 'closed') {
+        try {
+          audioCtxRef.current.close();
+        } catch {}
+      }
+    };
+  }, [file, stopPlayback]);
+
+  // Create and notify sliced file when selection range changes
+  const sliceAndNotify = useCallback((start: number, end: number, buffer: AudioBuffer) => {
+    const sampleRate = buffer.sampleRate;
+    const startOffset = Math.max(0, Math.floor(start * sampleRate));
+    const endOffset = Math.min(buffer.length, Math.floor(end * sampleRate));
+    const frameCount = Math.max(1, endOffset - startOffset);
+
+    const numChannels = buffer.numberOfChannels;
+    const monoSamples = new Float32Array(frameCount);
+
+    for (let ch = 0; ch < numChannels; ch++) {
+      const channelData = buffer.getChannelData(ch);
+      for (let i = 0; i < frameCount; i++) {
+        monoSamples[i] += channelData[startOffset + i] / numChannels;
+      }
+    }
+
+    const pcmBytes = new Uint8Array(frameCount * 2);
+    const dataView = new DataView(pcmBytes.buffer);
+    for (let i = 0; i < frameCount; i++) {
+      const s = Math.max(-1, Math.min(1, monoSamples[i]));
+      dataView.setInt16(i * 2, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
+    }
+
+    const wavBlob = pcmToWav(pcmBytes, sampleRate, 1);
+    const slicedFile = new File([wavBlob], `selected_${file.name.replace(/\.[^.]+$/, '')}.wav`, { type: 'audio/wav' });
+    onSliceChanged?.(slicedFile, start, end);
+  }, [file.name, onSliceChanged]);
+
+  useEffect(() => {
+    if (audioBuffer && endSec > startSec) {
+      sliceAndNotify(startSec, endSec, audioBuffer);
+    }
+  }, [audioBuffer, startSec, endSec, sliceAndNotify]);
+
+  // Set preset duration window (3s, 4s, 5s, 6s)
+  const applyPresetDuration = (targetDurationSec: number) => {
+    if (!duration) return;
+    const maxDur = Math.min(duration, targetDurationSec);
+    let newStart = startSec;
+    let newEnd = newStart + maxDur;
+    if (newEnd > duration) {
+      newEnd = duration;
+      newStart = Math.max(0, newEnd - maxDur);
+    }
+    setStartSec(newStart);
+    setEndSec(newEnd);
+  };
+
+  // Draw waveform with vivid 3-6s selected area
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas || !audioBuffer) return;
@@ -174,21 +189,20 @@ export const AudioWaveform: React.FC<AudioWaveformProps> = ({ file, onSliceChang
     const height = canvas.height;
     ctx.clearRect(0, 0, width, height);
 
-    // Compute peaks from channel data
     const channelData = audioBuffer.getChannelData(0);
     const step = Math.ceil(channelData.length / width);
     const amp = height / 2;
 
-    // Draw background grid lines
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.05)';
+    // Background center line
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.08)';
     ctx.lineWidth = 1;
     ctx.beginPath();
     ctx.moveTo(0, amp);
     ctx.lineTo(width, amp);
     ctx.stroke();
 
-    // Waveform bars
-    ctx.fillStyle = 'rgba(168, 85, 247, 0.4)'; // purple-500 unselected
+    // Dimmed full waveform
+    ctx.fillStyle = 'rgba(168, 85, 247, 0.25)';
     for (let i = 0; i < width; i++) {
       let min = 1.0;
       let max = -1.0;
@@ -204,17 +218,17 @@ export const AudioWaveform: React.FC<AudioWaveformProps> = ({ file, onSliceChang
       ctx.fillRect(i, y1, 1, Math.max(1, y2 - y1));
     }
 
-    // Draw selected region highlight
+    // Highlighted 3-6s selected region
     if (duration > 0) {
       const xStart = (startSec / duration) * width;
       const xEnd = (endSec / duration) * width;
 
-      // Selection overlay
-      ctx.fillStyle = 'rgba(168, 85, 247, 0.2)';
+      // Selection background tint
+      ctx.fillStyle = 'rgba(16, 185, 129, 0.2)';
       ctx.fillRect(xStart, 0, xEnd - xStart, height);
 
-      // Selected waveform re-draw in vivid color
-      ctx.fillStyle = '#c084fc'; // purple-400
+      // Selected waveform re-draw in vivid emerald
+      ctx.fillStyle = '#34d399';
       for (let i = Math.floor(xStart); i <= Math.ceil(xEnd); i++) {
         let min = 1.0;
         let max = -1.0;
@@ -230,9 +244,9 @@ export const AudioWaveform: React.FC<AudioWaveformProps> = ({ file, onSliceChang
         ctx.fillRect(i, y1, 1, Math.max(1, y2 - y1));
       }
 
-      // Left bracket boundary
-      ctx.strokeStyle = '#a855f7';
-      ctx.lineWidth = 2;
+      // Left & right bracket boundaries
+      ctx.strokeStyle = '#10b981';
+      ctx.lineWidth = 2.5;
       ctx.beginPath();
       ctx.moveTo(xStart, 0);
       ctx.lineTo(xStart, height);
@@ -241,13 +255,13 @@ export const AudioWaveform: React.FC<AudioWaveformProps> = ({ file, onSliceChang
       ctx.stroke();
 
       // Handles
-      ctx.fillStyle = '#ec4899';
-      ctx.fillRect(xStart - 3, 0, 6, 12);
-      ctx.fillRect(xStart - 3, height - 12, 6, 12);
-      ctx.fillRect(xEnd - 3, 0, 6, 12);
-      ctx.fillRect(xEnd - 3, height - 12, 6, 12);
+      ctx.fillStyle = '#10b981';
+      ctx.fillRect(xStart - 4, 0, 8, 14);
+      ctx.fillRect(xStart - 4, height - 14, 8, 14);
+      ctx.fillRect(xEnd - 4, 0, 8, 14);
+      ctx.fillRect(xEnd - 4, height - 14, 8, 14);
 
-      // Playhead position
+      // Playhead indicator
       if (isPlaying && playbackPos >= startSec && playbackPos <= endSec) {
         const xPos = (playbackPos / duration) * width;
         ctx.strokeStyle = '#ffffff';
@@ -260,7 +274,35 @@ export const AudioWaveform: React.FC<AudioWaveformProps> = ({ file, onSliceChang
     }
   }, [audioBuffer, duration, startSec, endSec, isPlaying, playbackPos]);
 
-  // Mouse interaction on canvas
+  // Click on selected part -> PLAYS ONLY THE SELECTED PART
+  const handleCanvasClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    if (!duration || !canvasRef.current) return;
+    const rect = canvasRef.current.getBoundingClientRect();
+    const clickX = e.clientX - rect.left;
+    const clickSec = (clickX / rect.width) * duration;
+
+    // Check if clicked INSIDE the selected part
+    if (clickSec >= startSec && clickSec <= endSec) {
+      if (isPlaying) {
+        stopPlayback();
+      } else {
+        playSelectedSlice();
+      }
+      return;
+    }
+
+    // Clicked outside: reposition selection window around clickSec (maintain 3-6s duration)
+    const currentLen = Math.max(MIN_SELECTION_SEC, Math.min(MAX_SELECTION_SEC, endSec - startSec));
+    let newStart = Math.max(0, clickSec - currentLen / 2);
+    let newEnd = newStart + currentLen;
+    if (newEnd > duration) {
+      newEnd = duration;
+      newStart = Math.max(0, newEnd - currentLen);
+    }
+    setStartSec(newStart);
+    setEndSec(newEnd);
+  };
+
   const handleMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
     if (!duration || !canvasRef.current) return;
     const rect = canvasRef.current.getBoundingClientRect();
@@ -269,18 +311,12 @@ export const AudioWaveform: React.FC<AudioWaveformProps> = ({ file, onSliceChang
 
     const distToStart = Math.abs(clickSec - startSec);
     const distToEnd = Math.abs(clickSec - endSec);
+    const handleThreshold = duration * 0.05;
 
-    if (distToStart < distToEnd && distToStart < duration * 0.15) {
+    if (distToStart < handleThreshold) {
       isDraggingStart.current = true;
-    } else if (distToEnd < duration * 0.15) {
+    } else if (distToEnd < handleThreshold) {
       isDraggingEnd.current = true;
-    } else {
-      // Clicked inside or outside: reposition start
-      if (clickSec < endSec) {
-        setStartSec(Math.max(0, clickSec));
-      } else {
-        setEndSec(Math.min(duration, clickSec));
-      }
     }
   };
 
@@ -290,13 +326,13 @@ export const AudioWaveform: React.FC<AudioWaveformProps> = ({ file, onSliceChang
     const curSec = Math.max(0, Math.min(duration, ((e.clientX - rect.left) / rect.width) * duration));
 
     if (isDraggingStart.current) {
-      if (curSec < endSec - 0.5) {
-        setStartSec(curSec);
-      }
+      const allowedStart = Math.max(0, Math.min(curSec, endSec - MIN_SELECTION_SEC));
+      const clampedStart = Math.max(allowedStart, endSec - MAX_SELECTION_SEC);
+      setStartSec(clampedStart);
     } else if (isDraggingEnd.current) {
-      if (curSec > startSec + 0.5) {
-        setEndSec(curSec);
-      }
+      const allowedEnd = Math.min(duration, Math.max(curSec, startSec + MIN_SELECTION_SEC));
+      const clampedEnd = Math.min(allowedEnd, startSec + MAX_SELECTION_SEC);
+      setEndSec(clampedEnd);
     }
   };
 
@@ -308,24 +344,34 @@ export const AudioWaveform: React.FC<AudioWaveformProps> = ({ file, onSliceChang
   const selectedDuration = Math.max(0, endSec - startSec);
 
   return (
-    <div className="w-full bg-black/70 border border-purple-500/30 rounded-xl p-3 space-y-2 mt-2 select-none">
-      <div className="flex items-center justify-between text-[11px]">
+    <div className="w-full bg-black/80 border border-emerald-500/30 rounded-xl p-3.5 space-y-3 mt-2 select-none shadow-[0_0_20px_rgba(16,185,129,0.08)]">
+      {/* Selection Control Bar & Quick Duration Presets */}
+      <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
         <div className="flex items-center gap-2">
+          {/* Play/Pause Button */}
           <button
             type="button"
-            onClick={(e) => { e.stopPropagation(); togglePlaySelected(); }}
-            className={`px-2.5 py-1 rounded-lg font-bold text-xs flex items-center gap-1.5 transition-all shadow-sm ${
+            onClick={(e) => {
+              e.stopPropagation();
+              if (isPlaying) {
+                stopPlayback();
+              } else {
+                playSelectedSlice();
+              }
+            }}
+            className={`px-3 py-1.5 rounded-lg font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer shadow-md ${
               isPlaying
-                ? 'bg-amber-500 hover:bg-amber-400 text-black'
-                : 'bg-purple-600 hover:bg-purple-500 text-white'
+                ? 'bg-amber-400 hover:bg-amber-300 text-black'
+                : 'bg-emerald-500 hover:bg-emerald-400 text-black'
             }`}
+            title="Click to play only the selected 3-6s slice"
           >
             {isPlaying ? (
               <>
                 <svg className="w-3.5 h-3.5 fill-current" viewBox="0 0 24 24">
                   <path d="M6 4h4v16H6V4zm8 0h4v16h-4V4z" />
                 </svg>
-                <span>Pause Selected</span>
+                <span>Pause</span>
               </>
             ) : (
               <>
@@ -336,30 +382,57 @@ export const AudioWaveform: React.FC<AudioWaveformProps> = ({ file, onSliceChang
               </>
             )}
           </button>
-          <span className="text-gray-300 font-mono text-[11px]">
+
+          {/* Time Readout */}
+          <span className="text-gray-300 font-mono text-xs">
             {startSec.toFixed(1)}s – {endSec.toFixed(1)}s
           </span>
-          <span className="text-purple-300 font-semibold bg-purple-950/80 border border-purple-500/30 px-1.5 py-0.5 rounded text-[10px]">
-            {selectedDuration.toFixed(1)}s selected
+
+          <span className="text-emerald-300 font-mono font-bold bg-emerald-950/80 border border-emerald-500/30 px-2 py-0.5 rounded text-[11px]">
+            {selectedDuration.toFixed(1)}s sample
           </span>
         </div>
-        <span className="text-gray-400 text-[10px] hidden sm:inline">
-          Drag handles or scrub range to extract target timbre (ideal: 3–15s)
-        </span>
+
+        {/* 3 to 6 Seconds Quick Preset Selectors */}
+        <div className="flex items-center gap-1.5">
+          <span className="text-gray-400 text-[10px] uppercase font-mono mr-1 hidden sm:inline">Slice:</span>
+          {[3.0, 4.0, 5.0, 6.0].map((sec) => (
+            <button
+              key={sec}
+              type="button"
+              onClick={() => applyPresetDuration(sec)}
+              className={`px-2 py-0.5 rounded text-[10px] font-mono font-semibold transition-all cursor-pointer ${
+                Math.abs(selectedDuration - sec) < 0.25
+                  ? 'bg-emerald-500 text-black shadow-[0_0_8px_rgba(16,185,129,0.5)]'
+                  : 'bg-white/10 hover:bg-white/20 text-gray-300'
+              }`}
+            >
+              {sec.toFixed(0)}s
+            </button>
+          ))}
+        </div>
       </div>
 
-      <div className="relative w-full h-16 bg-purple-950/20 rounded-lg overflow-hidden border border-purple-500/20">
+      {/* Interactive Waveform Canvas */}
+      <div className="relative w-full h-16 bg-[#030c06] rounded-lg overflow-hidden border border-emerald-500/20 group">
         <canvas
           ref={canvasRef}
           width={640}
           height={64}
+          onClick={handleCanvasClick}
           onMouseDown={handleMouseDown}
           onMouseMove={handleMouseMove}
           onMouseUp={handleMouseUp}
           onMouseLeave={handleMouseUp}
-          className="w-full h-full cursor-crosshair block"
+          className="w-full h-full cursor-pointer block"
+          title="Click inside selected area to play only the selected part; drag handles to trim 3-6s"
         />
+        <div className="absolute bottom-1 right-2 pointer-events-none text-[9px] font-mono text-emerald-400/60 uppercase">
+          Click selected part to play • 3s–6s slice
+        </div>
       </div>
     </div>
   );
 };
+
+export default AudioWaveform;

@@ -872,16 +872,37 @@ const buildDialoguePromptContext = (
 let cachedChatterboxBaseUrl: string | null | undefined = undefined;
 let chatterboxProbeTimestamp = 0;
 
-const resolveChatterboxEndpoint = async (): Promise<string | null> => {
+export const setCustomChatterboxUrl = (url: string): void => {
+  if (typeof localStorage !== 'undefined') {
+    if (url.trim()) {
+      localStorage.setItem('hypervox_chatterbox_url', url.trim());
+    } else {
+      localStorage.removeItem('hypervox_chatterbox_url');
+    }
+  }
+  cachedChatterboxBaseUrl = undefined;
+  chatterboxProbeTimestamp = 0;
+};
+
+export const getCustomChatterboxUrl = (): string => {
+  if (typeof localStorage !== 'undefined') {
+    return localStorage.getItem('hypervox_chatterbox_url') || '';
+  }
+  return '';
+};
+
+export const resolveChatterboxEndpoint = async (): Promise<string | null> => {
   const now = Date.now();
   if (cachedChatterboxBaseUrl !== undefined && now - chatterboxProbeTimestamp < 15000) {
     return cachedChatterboxBaseUrl;
   }
   chatterboxProbeTimestamp = now;
 
+  const storedUrl = getCustomChatterboxUrl();
   const envUrl = (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_CHATTERBOX_URL) || '';
 
   const candidates = Array.from(new Set([
+    storedUrl ? storedUrl.replace(/\/$/, '') : '',
     envUrl ? envUrl.replace(/\/$/, '') : '',
     CHATTERBOX_URL,
     '/api/chatterbox',
@@ -890,7 +911,7 @@ const resolveChatterboxEndpoint = async (): Promise<string | null> => {
   for (const base of candidates) {
     try {
       const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), 1200);
+      const timer = setTimeout(() => controller.abort(), 1500);
       const res = await fetch(`${base}/health`, { signal: controller.signal });
       clearTimeout(timer);
       if (res.ok) {

@@ -698,10 +698,11 @@ const TtsPanel: React.FC = () => {
     setCloneProgress({ current: 0, total: 3 });
 
     try {
+      const targetSample = slicedReferenceVoiceFile || referenceVoiceFile;
       const speedMultiplier = pacing === SpeechPacing.SLOW ? 0.85 : pacing === SpeechPacing.FAST ? 1.15 : 1.0;
       const convertedBlob = await convertVoiceToVoice(
         sourceBlob,
-        referenceVoiceFile,
+        targetSample,
         speedMultiplier,
         (current, total) => setCloneProgress({ current, total })
       );
@@ -1578,8 +1579,9 @@ Tip: Use (Style) tags for per-sentence emotion delivery — e.g. (Shouting) Mass
                   </div>
 
                   {referenceVoiceFile ? (
-                    <div 
-                      onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); setIsDraggingRef(true); }}
+                    <>
+                      <div 
+                        onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); setIsDraggingRef(true); }}
                       onDragEnter={(e) => { e.preventDefault(); e.stopPropagation(); setIsDraggingRef(true); }}
                       onDragLeave={(e) => { e.preventDefault(); e.stopPropagation(); setIsDraggingRef(false); }}
                       onDrop={handleDropReference}
@@ -1610,6 +1612,7 @@ Tip: Use (Style) tags for per-sentence emotion delivery — e.g. (Shouting) Mass
                         <button
                           onClick={() => {
                             setReferenceVoiceFile(null);
+                            setSlicedReferenceVoiceFile(null);
                             if (refVoiceInputRef.current) refVoiceInputRef.current.value = '';
                           }}
                           disabled={isCloning || isConvertingVc}
@@ -1619,6 +1622,15 @@ Tip: Use (Style) tags for per-sentence emotion delivery — e.g. (Shouting) Mass
                         </button>
                       </div>
                     </div>
+
+                    {/* Interactive 3-6 Seconds Audio Sample Range Selector & Player */}
+                    <AudioWaveform
+                      file={referenceVoiceFile}
+                      onSliceChanged={(slicedFile) => {
+                        setSlicedReferenceVoiceFile(slicedFile);
+                      }}
+                    />
+                  </>
                   ) : (
                     <div
                       onClick={() => refVoiceInputRef.current?.click()}
@@ -1721,6 +1733,16 @@ Tip: Use (Style) tags for per-sentence emotion delivery — e.g. (Shouting) Mass
                     {cloneError}
                   </div>
                 )}
+
+                {/* Chatterbox Neural Engine Status & Endpoint Config */}
+                <div className="flex items-center justify-between px-3 py-2 rounded-xl bg-purple-950/20 border border-purple-500/20 text-[11px] font-mono">
+                  <div className="flex items-center gap-2">
+                    <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                    <span className="text-gray-300">Chatterbox Neural VC:</span>
+                    <span className="text-purple-300 font-semibold">24kHz High-Precision</span>
+                  </div>
+                  <span className="text-emerald-400/80 text-[10px] font-semibold">Clean 3s–6s Target Sample</span>
+                </div>
 
                 {/* Action Buttons Grid: Voice-to-Voice & Text-to-Voice */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1">
