@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import TtsPanel from './components/TtsPanel';
 import StoryPanel from './components/StoryPanel';
 import DubbingPanel from './components/DubbingPanel';
@@ -53,6 +53,47 @@ const App: React.FC = () => {
   const [showOtpModal, setShowOtpModal] = useState(false);
   const [isGuideOpen, setIsGuideOpen] = useState(false);
 
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const [isMusicPlaying, setIsMusicPlaying] = useState(false);
+
+  const startMusic = useCallback(() => {
+    if (audioRef.current) {
+      audioRef.current.play().then(() => {
+        setIsMusicPlaying(true);
+      }).catch((err) => {
+        console.warn('Audio waiting for user gesture:', err);
+      });
+    }
+  }, []);
+
+  const toggleMusic = useCallback(() => {
+    if (!audioRef.current) return;
+    if (audioRef.current.paused) {
+      audioRef.current.play().then(() => setIsMusicPlaying(true)).catch(() => {});
+    } else {
+      audioRef.current.pause();
+      setIsMusicPlaying(false);
+    }
+  }, []);
+
+  // Autoplay fallback upon initial user interaction
+  useEffect(() => {
+    const handleFirstGesture = () => {
+      if (audioRef.current && audioRef.current.paused) {
+        audioRef.current.play().then(() => setIsMusicPlaying(true)).catch(() => {});
+      }
+      window.removeEventListener('click', handleFirstGesture);
+      window.removeEventListener('keydown', handleFirstGesture);
+    };
+
+    window.addEventListener('click', handleFirstGesture, { once: true });
+    window.addEventListener('keydown', handleFirstGesture, { once: true });
+    return () => {
+      window.removeEventListener('click', handleFirstGesture);
+      window.removeEventListener('keydown', handleFirstGesture);
+    };
+  }, []);
+
   useEffect(() => {
     const stopWatcher = startInactivityWatcher(() => {
       setCurrentUser(null);
@@ -65,8 +106,17 @@ const App: React.FC = () => {
   if (showIntro || !currentUser || !currentUser.passwordVerified) {
     return (
       <>
+        {/* Background Loop Audio */}
+        <audio ref={audioRef} loop preload="auto">
+          <source src="/audio/gmsitemusic.mp3" type="audio/mpeg" />
+          <source src="/audio/gmsitemusic.wav" type="audio/wav" />
+        </audio>
+
         <HypervoxIntro
+          isMusicPlaying={isMusicPlaying}
+          onToggleMusic={toggleMusic}
           onEnter={() => {
+            startMusic();
             const activeUser = getCurrentUser();
             if (activeUser && activeUser.passwordVerified) {
               setCurrentUser(activeUser);
@@ -83,6 +133,7 @@ const App: React.FC = () => {
             setCurrentUser(user);
             setShowOtpModal(false);
             setShowIntro(false);
+            startMusic();
           }}
         />
       </>
@@ -91,6 +142,12 @@ const App: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-[#050a07] text-gray-100 font-sans selection:bg-emerald-500/30 selection:text-white relative overflow-x-hidden">
+      {/* Background Loop Audio */}
+      <audio ref={audioRef} loop preload="auto">
+        <source src="/audio/gmsitemusic.mp3" type="audio/mpeg" />
+        <source src="/audio/gmsitemusic.wav" type="audio/wav" />
+      </audio>
+
       {/* Studio Feature Guide Modal */}
       <IntroModal isOpen={isGuideOpen} onClose={() => setIsGuideOpen(false)} />
 
@@ -135,8 +192,37 @@ const App: React.FC = () => {
             </span>
           </div>
 
-          {/* Right: Verified Phone User Badge & Sign Out */}
+          {/* Right: Music Toggle & Verified Phone User Badge & Sign Out */}
           <div className="flex items-center gap-2.5">
+            {/* Music On/Off Toggle Button */}
+            <button
+              onClick={toggleMusic}
+              title={isMusicPlaying ? 'Turn Music Off' : 'Turn Music On'}
+              className="flex items-center gap-2 px-3 py-1.5 rounded-full border border-emerald-500/40 bg-black/60 font-mono text-[11px] tracking-wider transition-all hover:border-emerald-400 cursor-pointer"
+              style={{
+                color: isMusicPlaying ? '#34d399' : '#9ca3af',
+                boxShadow: isMusicPlaying ? '0 0 15px rgba(16,185,129,0.3)' : 'none',
+              }}
+            >
+              {isMusicPlaying ? (
+                <>
+                  <span className="flex items-end gap-0.5 h-3">
+                    <span className="w-0.5 bg-emerald-400 h-3 animate-pulse" />
+                    <span className="w-0.5 bg-emerald-400 h-1.5 animate-pulse" />
+                    <span className="w-0.5 bg-emerald-400 h-2.5 animate-pulse" />
+                  </span>
+                  <span>MUSIC ON</span>
+                </>
+              ) : (
+                <>
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M17.25 9.75L19.5 12m0 0l2.25 2.25M19.5 12l2.25-2.25M19.5 12l-2.25 2.25m-10.5-6l4.72-4.72a.75.75 0 011.28.53v15.88a.75.75 0 01-1.28.53l-4.72-4.72H4.51c-.88 0-1.704-.507-1.938-1.354A9.01 9.01 0 012.25 12c0-.83.112-1.633.322-2.396C2.806 8.757 3.63 8.25 4.51 8.25H6.75z" />
+                  </svg>
+                  <span>MUSIC OFF</span>
+                </>
+              )}
+            </button>
+
             <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/5 border border-emerald-500/30">
               <span className="w-2 h-2 rounded-full bg-emerald-400 shadow-[0_0_8px_#34d399]" />
               <span className="text-xs font-mono font-medium text-white max-w-[130px] truncate hidden sm:inline">
