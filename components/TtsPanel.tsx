@@ -4,6 +4,8 @@ import { generateSpotAudio, clearAudioCache, optimizeScript, cloneVoiceZeroShot,
 import { getBrandFilename } from '../utils/audio';
 import { saveDownloadedTtsProfile, getRememberedTtsProfiles, RememberedTtsProfile, LOCKED_WEDDING_EXPO_PROFILE } from '../utils/memoryStore';
 import { AudioWaveform } from './AudioWaveform';
+import { VoiceCloningModal } from './VoiceCloningModal';
+import { WordPrecisionEditorModal } from './WordPrecisionEditorModal';
 
 const AVAILABLE_VOICES: VoiceOption[] = [
   // ── Custom Cloned Voice (Chatterbox Neural Engine) ──
@@ -554,6 +556,8 @@ const TtsPanel: React.FC = () => {
   const [cloneError, setCloneError] = useState<string | null>(null);
   const [isPlayingCloned, setIsPlayingCloned] = useState(false);
   const [activeOutputTab, setActiveOutputTab] = useState<'original' | 'cloned'>('original');
+  const [isCloneModalOpen, setIsCloneModalOpen] = useState(false);
+  const [isWordEditorOpen, setIsWordEditorOpen] = useState(false);
 
   const [isDraggingRef, setIsDraggingRef] = useState(false);
   const [isDraggingSource, setIsDraggingSource] = useState(false);
@@ -999,7 +1003,7 @@ const TtsPanel: React.FC = () => {
               <label className="block text-gray-400 text-xs font-semibold uppercase mb-1.5 tracking-wider">
                 Emotional Delivery Vibe
               </label>
-              <div className="space-y-2.5 max-h-[160px] overflow-y-auto pr-1 custom-scrollbar">
+              <div className="space-y-2.5">
                 {VIBE_CATEGORIES.map(cat => (
                   <div key={cat.category} className="space-y-1">
                     <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block">
@@ -1036,9 +1040,19 @@ const TtsPanel: React.FC = () => {
                 <label className="block text-gray-400 text-xs font-semibold uppercase tracking-wider">
                   Voice Artist Profile
                 </label>
-                <span className="text-[10px] text-emerald-400 font-mono">
-                  {AVAILABLE_VOICES.length} ARTISTS
-                </span>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setIsCloneModalOpen(true)}
+                    className="text-[10px] text-purple-400 hover:text-purple-300 font-bold uppercase tracking-wider flex items-center gap-1 px-2 py-0.5 rounded bg-purple-500/10 border border-purple-500/30"
+                  >
+                    <span>Clone Studio</span>
+                    <span>↗</span>
+                  </button>
+                  <span className="text-[10px] text-emerald-400 font-mono">
+                    {AVAILABLE_VOICES.length} ARTISTS
+                  </span>
+                </div>
               </div>
 
               {/* Quick Filter Pills */}
@@ -1048,7 +1062,14 @@ const TtsPanel: React.FC = () => {
                   return (
                     <button
                       key={filter}
-                      onClick={() => setVoiceFilter(filter)}
+                      onClick={() => {
+                        setVoiceFilter(filter);
+                        if (filter === 'Custom Voice') {
+                          const cv = AVAILABLE_VOICES.find(v => v.id === 'custom_cloned_voice');
+                          if (cv) setSelectedVoice(cv);
+                          setIsCloneModalOpen(true);
+                        }
+                      }}
                       className={`px-2.5 py-1 rounded-lg border whitespace-nowrap transition-all font-semibold ${
                         isActive
                           ? 'bg-emerald-500 text-black border-emerald-400 shadow-sm'
@@ -1062,7 +1083,7 @@ const TtsPanel: React.FC = () => {
               </div>
 
               {/* Voice Cards Grid */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-[220px] overflow-y-auto pr-1 custom-scrollbar">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                 {AVAILABLE_VOICES.filter(v => {
                   if (voiceFilter === 'ALL') return true;
                   if (voiceFilter === 'Male') return v.gender === VoiceGender.MALE;
@@ -1074,7 +1095,10 @@ const TtsPanel: React.FC = () => {
                   return (
                     <button
                       key={v.id}
-                      onClick={() => setSelectedVoice(v)}
+                      onClick={() => {
+                        setSelectedVoice(v);
+                        if (isCustom) setIsCloneModalOpen(true);
+                      }}
                       title={v.persona}
                       className={`p-2.5 rounded-xl border text-left transition-all select-none relative flex flex-col justify-between ${
                         isSelected 
@@ -1107,7 +1131,7 @@ const TtsPanel: React.FC = () => {
                             ? 'text-purple-400'
                             : v.gender === VoiceGender.MALE ? 'text-sky-400/80' : 'text-rose-400/80'
                         }`}>
-                          {isCustom ? 'Local Cloned Voice' : (v.category === 'Kids & Animation' ? 'Kid' : v.gender)}
+                          {isCustom ? 'Custom Cloned Voice' : (v.category === 'Kids & Animation' ? 'Kid' : v.gender)}
                         </span>
                         <span className="text-gray-400 truncate max-w-[110px] text-right font-light">
                           {v.category}
@@ -1118,88 +1142,28 @@ const TtsPanel: React.FC = () => {
                 })}
               </div>
 
-              {/* Custom Voice Sample Selector Banner when Custom Voice is Selected */}
+              {/* Custom Voice Trigger Card */}
               {selectedVoice.id === 'custom_cloned_voice' && (
-                <div className="mt-3 space-y-2">
-                  <div
-                    onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); setIsDraggingRef(true); }}
-                    onDragEnter={(e) => { e.preventDefault(); e.stopPropagation(); setIsDraggingRef(true); }}
-                    onDragLeave={(e) => { e.preventDefault(); e.stopPropagation(); setIsDraggingRef(false); }}
-                    onDrop={handleDropReference}
-                    onClick={() => {
-                      const el = refVoiceInputRef.current || document.getElementById('hypervox-ref-voice-input') as HTMLInputElement | null;
-                      el?.click();
-                    }}
-                    className={`p-3.5 rounded-xl border transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-lg cursor-pointer ${
-                      isDraggingRef 
-                        ? 'border-purple-400 bg-purple-900/60 ring-2 ring-purple-400/50' 
-                        : 'border-purple-500/40 bg-purple-950/30 hover:border-purple-400/80 hover:bg-purple-950/50'
-                    }`}
-                  >
-                    <div className="flex items-center gap-2.5 min-w-0">
-                      <div className="w-8 h-8 rounded-lg bg-purple-500/20 border border-purple-500/40 flex items-center justify-center text-purple-400 flex-shrink-0">
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M12 18.75a6 6 0 006-6v-1.5m-6 7.5a6 6 0 01-6-6v-1.5m6 7.5v3.75m-3.75 0h7.5M12 15a3 3 0 01-3-3V4.5a3 3 0 116 0v7.5a3 3 0 01-3 3z" />
-                        </svg>
-                      </div>
-                      <div className="truncate">
-                        <p className="text-xs font-bold text-white flex items-center gap-1.5 truncate">
-                          <span>Target Voice Sample:</span>
-                          <span className="text-purple-300 font-mono font-normal truncate">
-                            {referenceVoiceFile ? referenceVoiceFile.name : (isDraggingRef ? 'Drop audio file here...' : 'No sample uploaded yet')}
-                          </span>
-                        </p>
-                        <p className="text-[10px] text-gray-400">
-                          {referenceVoiceFile 
-                            ? `${(referenceVoiceFile.size / 1024 / 1024).toFixed(2)} MB • Ready for Voice Cloning (Click or drop to replace)`
-                            : 'Drag & drop or click upload (5–30s clean WAV/MP3/M4A audio sample)'
-                          }
-                        </p>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2 flex-shrink-0" onClick={(e) => e.stopPropagation()}>
-                      {referenceVoiceFile && (
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setReferenceVoiceFile(null);
-                            setSlicedReferenceVoiceFile(null);
-                            const el = refVoiceInputRef.current || document.getElementById('hypervox-ref-voice-input') as HTMLInputElement | null;
-                            if (el) el.value = '';
-                          }}
-                          type="button"
-                          className="px-2 py-1.5 rounded-lg text-xs font-semibold bg-red-950/60 hover:bg-red-900/80 text-red-300 border border-red-500/30 transition-all cursor-pointer"
-                          title="Remove sample"
-                        >
-                          ✕
-                        </button>
-                      )}
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          const el = refVoiceInputRef.current || document.getElementById('hypervox-ref-voice-input') as HTMLInputElement | null;
-                          el?.click();
-                        }}
-                        type="button"
-                        className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-purple-600 hover:bg-purple-500 text-white flex-shrink-0 shadow-md transition-all flex items-center gap-1.5 cursor-pointer"
-                      >
-                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />
-                        </svg>
-                        <span>{referenceVoiceFile ? 'Change Sample' : 'Upload Voice Sample'}</span>
-                      </button>
-                    </div>
+                <div className="mt-3 p-3 rounded-xl border border-purple-500/40 bg-purple-950/30 flex items-center justify-between gap-3 shadow-lg">
+                  <div className="min-w-0">
+                    <p className="text-xs font-bold text-white flex items-center gap-1.5">
+                      <span className="w-2 h-2 rounded-full bg-purple-400 animate-pulse" />
+                      <span>Custom Cloned Voice Active</span>
+                    </p>
+                    <p className="text-[10px] text-purple-200/80 truncate font-mono mt-0.5">
+                      {referenceVoiceFile ? `Sample: ${referenceVoiceFile.name}` : 'No target sample loaded yet'}
+                    </p>
                   </div>
-
-                  {/* Interactive Waveform Audio Visualizer & Manual Range Selection */}
-                  {referenceVoiceFile && (
-                    <AudioWaveform
-                      file={referenceVoiceFile}
-                      onSliceChanged={(slicedFile) => {
-                        setSlicedReferenceVoiceFile(slicedFile);
-                      }}
-                    />
-                  )}
+                  <button
+                    type="button"
+                    onClick={() => setIsCloneModalOpen(true)}
+                    className="px-3 py-1.5 rounded-lg text-xs font-bold bg-purple-600 hover:bg-purple-500 text-white flex-shrink-0 shadow-md transition-all flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <span>{referenceVoiceFile ? 'Manage Sample' : 'Upload & Clone Voice'}</span>
+                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 6H5.25A2.25 2.25 0 003 8.25v10.5A2.25 2.25 0 005.25 21h10.5A2.25 2.25 0 0018 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25" />
+                    </svg>
+                  </button>
                 </div>
               )}
             </div>
@@ -1495,6 +1459,19 @@ Tip: Use (Style) tags for per-sentence emotion delivery — e.g. (Shouting) Mass
                   <span>Download Master WAV</span>
                 </a>
 
+                {/* Word Precision Audio Editor Button (Inpainting) */}
+                <button
+                  type="button"
+                  onClick={() => setIsWordEditorOpen(true)}
+                  className="bg-indigo-600/30 hover:bg-indigo-600/40 text-indigo-300 hover:text-white border border-indigo-400/40 font-bold py-3 px-4 rounded-xl text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition-all cursor-pointer shadow-lg"
+                  title="Select individual words or audio segments in pop-up window to inpaint and replace alone"
+                >
+                  <svg className="w-4 h-4 text-indigo-400" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0115.75 21H5.25A2.25 2.25 0 013 18.75V8.25A2.25 2.25 0 015.25 6H10" />
+                  </svg>
+                  <span>Edit Words Alone (Popup Editor)</span>
+                </button>
+
                 {clonedAudioUrl ? (
                   <a 
                     href={clonedAudioUrl} 
@@ -1539,267 +1516,89 @@ Tip: Use (Style) tags for per-sentence emotion delivery — e.g. (Shouting) Mass
               </div>
             </div>
 
-            {/* ── Direct Voice-to-Voice & Text-to-Voice Cloning Deck ── */}
-            <div className="liquid-glass p-5 space-y-4 border border-purple-500/30 bg-purple-950/20 shadow-2xl">
-              <div className="flex items-center justify-between border-b border-purple-500/20 pb-3">
-                <div className="flex items-center gap-2.5">
-                  <div className="w-7 h-7 rounded-lg bg-purple-500/20 border border-purple-500/40 flex items-center justify-center text-purple-400">
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M19.114 5.636a9 9 0 010 12.728M16.463 8.288a5.25 5.25 0 010 7.424M6.75 8.25l4.72-4.72a.75.75 0 011.28.53v15.88a.75.75 0 01-1.28.53l-4.72-4.72H4.51c-.88 0-1.704-.507-1.938-1.354A9.01 9.01 0 012.25 12c0-.83.083-1.638.24-2.416.234-.847 1.058-1.354 1.938-1.354h2.24z" />
-                    </svg>
-                  </div>
-                  <div>
-                    <h4 className="text-white font-bold uppercase text-xs tracking-wider flex items-center gap-2">
-                      <span>Direct Voice-to-Voice & Text-to-Voice Cloning</span>
-                      <span className="text-[9px] px-1.5 py-0.5 rounded bg-purple-500/30 text-purple-300 font-mono font-bold">Chatterbox Clone</span>
-                    </h4>
-                    <p className="text-[10px] text-gray-400 mt-0.5">
-                      Transform any spoken voice directly into your target voice sample, or clone script text
-                    </p>
-                  </div>
+            {/* ── Direct Voice-to-Voice & Text-to-Voice Cloning Studio Launcher Banner ── */}
+            <div className="liquid-glass p-4 border border-purple-500/30 bg-purple-950/20 shadow-xl flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-xl bg-purple-500/20 border border-purple-500/40 flex items-center justify-center text-purple-400 flex-shrink-0">
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M19.114 5.636a9 9 0 010 12.728M16.463 8.288a5.25 5.25 0 010 7.424M6.75 8.25l4.72-4.72a.75.75 0 011.28.53v15.88a.75.75 0 01-1.28.53l-4.72-4.72H4.51c-.88 0-1.704-.507-1.938-1.354A9.01 9.01 0 012.25 12c0-.83.083-1.638.24-2.416.234-.847 1.058-1.354 1.938-1.354h2.24z" />
+                  </svg>
                 </div>
-
-                {clonedAudioUrl && (
-                  <span className="text-[10px] px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-400 font-bold border border-emerald-500/30">
-                    ✓ Cloned Output Ready
-                  </span>
-                )}
+                <div>
+                  <h4 className="text-white font-bold text-xs uppercase tracking-wider flex items-center gap-2">
+                    <span>Direct Voice-to-Voice & Voice Cloning Studio</span>
+                    <span className="text-[9px] px-1.5 py-0.5 rounded bg-purple-500/30 text-purple-300 font-mono font-bold">Popup Deck</span>
+                  </h4>
+                  <p className="text-[11px] text-gray-400 mt-0.5">
+                    {referenceVoiceFile ? `Active Sample: ${referenceVoiceFile.name}` : 'Transform spoken voice into target voice sample or clone script text'}
+                  </p>
+                </div>
               </div>
 
-              <div className="space-y-3.5">
-                {/* 1. Target Voice Sample (User Given Voice) */}
-                <div>
-                  <div className="flex items-center justify-between mb-1.5">
-                    <label className="text-[11px] font-semibold text-purple-300 uppercase tracking-wider flex items-center gap-1.5">
-                      <span>Target Voice Sample (User Given Voice)</span>
-                      <span className="text-[9px] px-1.5 py-0.2 rounded bg-purple-400/20 text-purple-200">Required</span>
-                    </label>
-                  </div>
-
-                  {referenceVoiceFile ? (
-                    <>
-                      <div 
-                        onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); setIsDraggingRef(true); }}
-                      onDragEnter={(e) => { e.preventDefault(); e.stopPropagation(); setIsDraggingRef(true); }}
-                      onDragLeave={(e) => { e.preventDefault(); e.stopPropagation(); setIsDraggingRef(false); }}
-                      onDrop={handleDropReference}
-                      className={`bg-black/40 border rounded-xl p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3 transition-all ${
-                        isDraggingRef ? 'border-purple-400 ring-2 ring-purple-400/50 bg-purple-950/40' : 'border-purple-500/40'
-                      }`}
-                    >
-                      <div className="min-w-0 flex items-center gap-2.5">
-                        <div className="w-8 h-8 rounded-lg bg-purple-500/20 flex items-center justify-center text-purple-400 flex-shrink-0">
-                          <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
-                          </svg>
-                        </div>
-                        <div className="truncate">
-                          <p className="text-xs font-semibold text-white truncate">{referenceVoiceFile.name}</p>
-                          <p className="text-[10px] text-gray-400 font-mono">{(referenceVoiceFile.size / 1024 / 1024).toFixed(2)} MB • Target Speaker Timbre (Drop to replace)</p>
-                        </div>
-                      </div>
-
-                      <div className="flex items-center gap-2">
-                        <button
-                          onClick={() => refVoiceInputRef.current?.click()}
-                          disabled={isCloning || isConvertingVc}
-                          className="px-2.5 py-1 text-[11px] rounded-lg bg-white/5 hover:bg-white/10 text-gray-300 transition-colors cursor-pointer"
-                        >
-                          Change
-                        </button>
-                        <button
-                          onClick={() => {
-                            setReferenceVoiceFile(null);
-                            setSlicedReferenceVoiceFile(null);
-                            if (refVoiceInputRef.current) refVoiceInputRef.current.value = '';
-                          }}
-                          disabled={isCloning || isConvertingVc}
-                          className="px-2 py-1 text-[11px] rounded-lg bg-red-950/40 text-red-400 hover:bg-red-900/60 transition-colors cursor-pointer"
-                        >
-                          ✕
-                        </button>
-                      </div>
-                    </div>
-
-                    {/* Interactive 3-6 Seconds Audio Sample Range Selector & Player */}
-                    <AudioWaveform
-                      file={referenceVoiceFile}
-                      onSliceChanged={(slicedFile) => {
-                        setSlicedReferenceVoiceFile(slicedFile);
-                      }}
-                    />
-                  </>
-                  ) : (
-                    <div
-                      onClick={() => refVoiceInputRef.current?.click()}
-                      onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); setIsDraggingRef(true); }}
-                      onDragEnter={(e) => { e.preventDefault(); e.stopPropagation(); setIsDraggingRef(true); }}
-                      onDragLeave={(e) => { e.preventDefault(); e.stopPropagation(); setIsDraggingRef(false); }}
-                      onDrop={handleDropReference}
-                      className={`border-2 border-dashed rounded-xl p-3.5 text-center cursor-pointer transition-all ${
-                        isDraggingRef
-                          ? 'border-purple-400 bg-purple-950/50 ring-2 ring-purple-400/50'
-                          : 'border-purple-500/30 hover:border-purple-400/60 bg-black/20 hover:bg-purple-950/20'
-                      }`}
-                    >
-                      <p className="text-xs font-semibold text-purple-200">
-                        {isDraggingRef ? 'Drop Voice Sample Audio File Here' : 'Upload or Drag & Drop Target Voice Sample (5–30s MP3/WAV)'}
-                      </p>
-                      <p className="text-[10px] text-gray-400 mt-0.5">
-                        Drop audio file here or click to browse files
-                      </p>
-                    </div>
-                  )}
-                </div>
-
-                {/* 2. Source Speech for Voice-to-Voice */}
-                <div>
-                  <div className="flex items-center justify-between mb-1.5">
-                    <label className="text-[11px] font-semibold text-gray-300 uppercase tracking-wider flex items-center gap-1.5">
-                      <span>Source Audio to Convert (Voice-to-Voice)</span>
-                    </label>
-                    <button
-                      onClick={() => sourceVoiceInputRef.current?.click()}
-                      disabled={isCloning || isConvertingVc}
-                      className="text-[10px] text-purple-300 hover:text-white underline cursor-pointer"
-                    >
-                      {sourceVoiceFile ? 'Change Source File' : 'Upload External Audio'}
-                    </button>
-                  </div>
-
-                  {sourceVoiceFile ? (
-                    <div 
-                      onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); setIsDraggingSource(true); }}
-                      onDragEnter={(e) => { e.preventDefault(); e.stopPropagation(); setIsDraggingSource(true); }}
-                      onDragLeave={(e) => { e.preventDefault(); e.stopPropagation(); setIsDraggingSource(false); }}
-                      onDrop={handleDropSource}
-                      className={`bg-black/30 border rounded-xl p-2.5 flex items-center justify-between gap-3 text-xs transition-all ${
-                        isDraggingSource ? 'border-purple-400 ring-2 ring-purple-400/50 bg-purple-950/30' : 'border-white/10'
-                      }`}
-                    >
-                      <div className="truncate flex items-center gap-2">
-                        <span className="text-purple-400">●</span>
-                        <span className="text-white truncate font-medium">{sourceVoiceFile.name}</span>
-                        <span className="text-gray-400 text-[10px] font-mono">({(sourceVoiceFile.size / 1024 / 1024).toFixed(2)} MB • Drop to replace)</span>
-                      </div>
-                      <button
-                        onClick={() => {
-                          setSourceVoiceFile(null);
-                          if (sourceVoiceInputRef.current) sourceVoiceInputRef.current.value = '';
-                        }}
-                        className="text-red-400 hover:text-red-300 px-2 py-0.5 text-[11px]"
-                      >
-                        ✕
-                      </button>
-                    </div>
-                  ) : audioUrl ? (
-                    <div 
-                      onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); setIsDraggingSource(true); }}
-                      onDragEnter={(e) => { e.preventDefault(); e.stopPropagation(); setIsDraggingSource(true); }}
-                      onDragLeave={(e) => { e.preventDefault(); e.stopPropagation(); setIsDraggingSource(false); }}
-                      onDrop={handleDropSource}
-                      className={`bg-emerald-950/20 border rounded-xl p-2.5 flex items-center justify-between gap-2 text-xs transition-all ${
-                        isDraggingSource ? 'border-purple-400 ring-2 ring-purple-400/50 bg-purple-950/30' : 'border-emerald-500/30'
-                      }`}
-                    >
-                      <div className="flex items-center gap-2">
-                        <span className="text-emerald-400">✓</span>
-                        <span className="text-emerald-200 font-medium">Using Current Generated Spot Audio</span>
-                      </div>
-                      <span className="text-[10px] text-gray-400 font-mono">Drop file to override</span>
-                    </div>
-                  ) : (
-                    <div
-                      onClick={() => sourceVoiceInputRef.current?.click()}
-                      onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); setIsDraggingSource(true); }}
-                      onDragEnter={(e) => { e.preventDefault(); e.stopPropagation(); setIsDraggingSource(true); }}
-                      onDragLeave={(e) => { e.preventDefault(); e.stopPropagation(); setIsDraggingSource(false); }}
-                      onDrop={handleDropSource}
-                      className={`border border-dashed rounded-xl p-2.5 text-center cursor-pointer text-[11px] transition-all ${
-                        isDraggingSource
-                          ? 'border-purple-400 bg-purple-950/30 text-purple-200 ring-2 ring-purple-400/50'
-                          : 'border-white/10 hover:border-white/20 bg-black/10 text-gray-400'
-                      }`}
-                    >
-                      {isDraggingSource ? 'Drop Source Audio File Here' : 'Generate spot above, or click/drag & drop external source audio here'}
-                    </div>
-                  )}
-                </div>
-
-                {cloneError && (
-                  <div className="p-3 bg-red-950/50 border border-red-500/40 text-red-200 text-xs rounded-xl">
-                    {cloneError}
-                  </div>
+              <div className="flex items-center gap-2.5 flex-shrink-0">
+                {clonedAudioUrl && (
+                  <span className="text-[10px] px-2 py-1 rounded bg-emerald-500/20 text-emerald-400 font-bold border border-emerald-500/30">
+                    ✓ Cloned Ready
+                  </span>
                 )}
-
-                {/* Chatterbox Neural Voice Engine Status */}
-                <div className="flex items-center justify-between px-3.5 py-2.5 rounded-xl bg-emerald-950/20 border border-emerald-500/20 text-[11px] font-mono">
-                  <div className="flex items-center gap-2">
-                    <span className="w-2 h-2 rounded-full bg-emerald-400 shadow-[0_0_8px_#34d399] animate-pulse" />
-                    <span className="text-gray-300">Neural Voice Engine:</span>
-                    <span className="text-emerald-300 font-bold">Chatterbox Neural VC Flow (Zero-Shot)</span>
-                  </div>
-                  <span className="text-emerald-400/80 text-[10px] font-semibold">Clean 3s–6s Target Sample</span>
-                </div>
-
-                {/* Action Buttons Grid: Voice-to-Voice & Text-to-Voice */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1">
-                  {/* Option 1: Direct Voice to Voice Conversion */}
-                  <button
-                    onClick={handleVoiceToVoice}
-                    disabled={isConvertingVc || isCloning || !referenceVoiceFile || (!sourceVoiceFile && !audioUrl)}
-                    className={`py-3 px-4 rounded-xl font-bold text-xs uppercase tracking-wider transition-all flex items-center justify-center gap-2 ${
-                      isConvertingVc || isCloning || !referenceVoiceFile || (!sourceVoiceFile && !audioUrl)
-                        ? 'bg-purple-950/30 text-gray-500 border border-purple-500/20 cursor-not-allowed'
-                        : 'bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white shadow-lg cursor-pointer ring-1 ring-purple-400/50'
-                    }`}
-                  >
-                    {isConvertingVc ? (
-                      <>
-                        <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                        <span>Converting Voice-to-Voice...</span>
-                      </>
-                    ) : (
-                      <>
-                        <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M19.114 5.636a9 9 0 010 12.728M16.463 8.288a5.25 5.25 0 010 7.424M6.75 8.25l4.72-4.72a.75.75 0 011.28.53v15.88a.75.75 0 01-1.28.53l-4.72-4.72H4.51c-.88 0-1.704-.507-1.938-1.354A9.01 9.01 0 012.25 12c0-.83.083-1.638.24-2.416.234-.847 1.058-1.354 1.938-1.354h2.24z" />
-                        </svg>
-                        <span>Voice to Voice Convert</span>
-                      </>
-                    )}
-                  </button>
-
-                  {/* Option 2: Direct Text to Voice Clone */}
-                  <button
-                    onClick={handleCloneVoice}
-                    disabled={isCloning || isConvertingVc || !referenceVoiceFile}
-                    className={`py-3 px-4 rounded-xl font-bold text-xs uppercase tracking-wider transition-all flex items-center justify-center gap-2 ${
-                      isCloning || isConvertingVc || !referenceVoiceFile
-                        ? 'bg-white/5 text-gray-500 border border-white/5 cursor-not-allowed'
-                        : 'bg-white/10 hover:bg-white/15 text-purple-200 border border-purple-500/30 hover:border-purple-400 cursor-pointer'
-                    }`}
-                  >
-                    {isCloning ? (
-                      <>
-                        <div className="w-3.5 h-3.5 border-2 border-purple-300 border-t-transparent rounded-full animate-spin" />
-                        <span>Synthesizing Text...</span>
-                      </>
-                    ) : (
-                      <>
-                        <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M12 18.75a6 6 0 006-6v-1.5m-6 7.5a6 6 0 01-6-6v-1.5m6 7.5v3.75m-3.75 0h7.5M12 15a3 3 0 01-3-3V4.5a3 3 0 116 0v7.5a3 3 0 01-3 3z" />
-                        </svg>
-                        <span>Clone Script (Text to Voice)</span>
-                      </>
-                    )}
-                  </button>
-                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsCloneModalOpen(true)}
+                  className="px-4 py-2 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold text-xs rounded-xl shadow-lg transition-all flex items-center gap-2 cursor-pointer"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 6H5.25A2.25 2.25 0 003 8.25v10.5A2.25 2.25 0 005.25 21h10.5A2.25 2.25 0 0018 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25" />
+                  </svg>
+                  <span>Open Voice Cloning Window</span>
+                </button>
               </div>
             </div>
           </div>
         )}
 
       </div>
+      
+      {/* ── Voice Cloning Modal ── */}
+      <VoiceCloningModal
+        isOpen={isCloneModalOpen}
+        onClose={() => setIsCloneModalOpen(false)}
+        referenceVoiceFile={referenceVoiceFile}
+        setReferenceVoiceFile={setReferenceVoiceFile}
+        slicedReferenceVoiceFile={slicedReferenceVoiceFile}
+        setSlicedReferenceVoiceFile={setSlicedReferenceVoiceFile}
+        sourceVoiceFile={sourceVoiceFile}
+        setSourceVoiceFile={setSourceVoiceFile}
+        clonedAudioUrl={clonedAudioUrl}
+        setClonedAudioUrl={setClonedAudioUrl}
+        isCloning={isCloning}
+        isConvertingVc={isConvertingVc}
+        cloneProgress={cloneProgress}
+        cloneError={cloneError}
+        handleVoiceToVoice={handleVoiceToVoice}
+        handleCloneVoice={handleCloneVoice}
+        script={script}
+        audioUrl={audioUrl}
+      />
+
+      {/* ── Word-Level Voice Precision Inpainting Editor Modal ── */}
+      <WordPrecisionEditorModal
+        isOpen={isWordEditorOpen}
+        onClose={() => setIsWordEditorOpen(false)}
+        script={script}
+        audioUrl={audioUrl}
+        voice={selectedVoice}
+        emotion={emotion}
+        dialect={dialect}
+        pacing={pacing}
+        onApplyMasterEdit={(newBlob, newScript) => {
+          if (audioUrl) URL.revokeObjectURL(audioUrl);
+          const newUrl = URL.createObjectURL(newBlob);
+          setAudioUrl(newUrl);
+          setScript(newScript);
+          setToastMessage('Word replacement applied to master track.');
+          setTimeout(() => setToastMessage(null), 3500);
+        }}
+      />
       
       {/* Toast Notification */}
       {toastMessage && (
