@@ -1,5 +1,15 @@
 // @ts-ignore
-import { Mp3Encoder } from 'lamejs';
+import * as lamejs from 'lamejs';
+
+// Resolve Mp3Encoder constructor safely across Vite ESM / CJS / IIFE builds
+const resolveMp3Encoder = () => {
+  const mod = lamejs as any;
+  if (typeof mod?.Mp3Encoder === 'function') return mod.Mp3Encoder;
+  if (typeof mod?.default?.Mp3Encoder === 'function') return mod.default.Mp3Encoder;
+  if (typeof (window as any)?.lamejs?.Mp3Encoder === 'function') return (window as any).lamejs.Mp3Encoder;
+  if (typeof (globalThis as any)?.lamejs?.Mp3Encoder === 'function') return (globalThis as any).lamejs.Mp3Encoder;
+  return null;
+};
 
 // Utility to convert raw PCM data to WAV format (Default: 44.1 kHz Studio Quality)
 export const pcmToWav = (pcmData: Uint8Array, sampleRate: number = 44100, numChannels: number = 1): Blob => {
@@ -53,26 +63,32 @@ export const pcmToMp3 = (
     const validLength = pcmData.byteLength - (pcmData.byteLength % 2);
     const wavSamples = new Int16Array(pcmData.buffer, pcmData.byteOffset, validLength / 2);
     
-    const mp3encoder = new Mp3Encoder(numChannels, sampleRate, bitrate); // 128kbps, 44.1kHz
-    const mp3Data: Uint8Array[] = [];
+    const Mp3EncoderClass = resolveMp3Encoder();
+    if (!Mp3EncoderClass) {
+      console.warn("Mp3Encoder class not found, falling back to WAV");
+      return pcmToWav(pcmData, sampleRate, numChannels);
+    }
+
+    const mp3encoder = new Mp3EncoderClass(numChannels, sampleRate, bitrate);
+    const mp3Chunks: Uint8Array[] = [];
     
-    const blockSize = 1152; // multiple of 576
+    const blockSize = 1152;
     for (let i = 0; i < wavSamples.length; i += blockSize) {
       const sampleChunk = wavSamples.subarray(i, i + blockSize);
       const mp3buf = mp3encoder.encodeBuffer(sampleChunk);
-      if (mp3buf.length > 0) {
-        mp3Data.push(new Uint8Array(mp3buf));
+      if (mp3buf && mp3buf.length > 0) {
+        mp3Chunks.push(new Uint8Array(mp3buf.buffer, mp3buf.byteOffset, mp3buf.byteLength));
       }
     }
     
-    const mp3buf = mp3encoder.flush();
-    if (mp3buf.length > 0) {
-      mp3Data.push(new Uint8Array(mp3buf));
+    const mp3flush = mp3encoder.flush();
+    if (mp3flush && mp3flush.length > 0) {
+      mp3Chunks.push(new Uint8Array(mp3flush.buffer, mp3flush.byteOffset, mp3flush.byteLength));
     }
     
-    return new Blob(mp3Data as any, { type: 'audio/mp3' });
+    return new Blob(mp3Chunks as any, { type: 'audio/mp3' });
   } catch (e) {
-    console.error("MP3 Encoding failed (MPEGMode/Lamejs error). Falling back to WAV.", e);
+    console.error("MP3 Encoding failed, falling back to WAV:", e);
     return pcmToWav(pcmData, sampleRate, numChannels);
   }
 };
@@ -340,140 +356,21 @@ export const analyzeAudioAcoustics = (samples: Float32Array, sampleRate: number 
  */
 export const applyAcousticTransfer = (
   pcm: Uint8Array,
-  profile: AcousticVoiceProfile,
+  _profile: AcousticVoiceProfile,
   sampleRate: number = 24000
 ): Uint8Array => {
   if (pcm.byteLength < 4) return pcm;
-
-  const numSamples = Math.floor(pcm.byteLength / 2);
-  const input = new Int16Array(pcm.buffer, pcm.byteOffset, numSamples);
-
-  // 1. Calculate Fundamental Pitch Shift Ratio (Target Reference F0 / Matched Base Voice F0)
-  const rawRatio = profile.pitchHz / Math.max(50, profile.baseVoicePitchHz);
-  const pitchRatio = Math.min(Math.max(rawRatio, 0.65), 1.65);
-
-  let currentSamples = new Float32Array(numSamples);
-  for (let i = 0; i < numSamples; i++) {
-    currentSamples[i] = input[i];
-  }
-
-  // 2. High-Precision SOLA Pitch Shifting (if pitch delta >= 3%)
-  if (Math.abs(pitchRatio - 1.0) >= 0.03) {
-    const resampledLen = Math.round(numSamples / pitchRatio);
-    const resampled = new Float32Array(resampledLen);
-    for (let i = 0; i < resampledLen; i++) {
-      const srcPos = i * pitchRatio;
-      const i0 = Math.floor(srcPos);
-      const i1 = Math.min(i0 + 1, numSamples - 1);
-      const frac = srcPos - i0;
-      resampled[i] = currentSamples[i0] * (1 - frac) + currentSamples[i1] * frac;
-    }
-
-    const stretchFactor = pitchRatio;
-    const windowSize = Math.round(sampleRate * 0.028); // 28ms window
-    const hopOut = Math.round(windowSize / 2);
-    const hopIn = Math.round(hopOut / stretchFactor);
-    const maxSearch = Math.round(windowSize * 0.35);
-
-    const targetLen = numSamples;
-    const output = new Float32Array(targetLen);
-    const weight = new Float32Array(targetLen);
-
-    // Periodic Hanning window
-    const window = new Float32Array(windowSize);
-    for (let i = 0; i < windowSize; i++) {
-      window[i] = 0.5 * (1 - Math.cos((2 * Math.PI * i) / (windowSize - 1)));
-    }
-
-    let inPos = 0;
-    let outPos = 0;
-
-    while (outPos + windowSize < targetLen && inPos + windowSize + maxSearch < resampledLen) {
-      let bestOffset = 0;
-      if (outPos > 0) {
-        let maxCorr = -Infinity;
-        for (let offset = -maxSearch; offset <= maxSearch; offset++) {
-          const testIn = inPos + offset;
-          if (testIn < 0 || testIn + windowSize >= resampledLen) continue;
-          let corr = 0;
-          let norm = 1e-6;
-          for (let j = 0; j < hopOut; j++) {
-            const sOut = output[outPos + j];
-            const sIn = resampled[testIn + j];
-            corr += sOut * sIn;
-            norm += sIn * sIn;
-          }
-          const score = corr / Math.sqrt(norm);
-          if (score > maxCorr) {
-            maxCorr = score;
-            bestOffset = offset;
-          }
-        }
-      }
-
-      const actualIn = inPos + bestOffset;
-      for (let j = 0; j < windowSize; j++) {
-        if (outPos + j < targetLen && actualIn + j < resampledLen) {
-          output[outPos + j] += resampled[actualIn + j] * window[j];
-          weight[outPos + j] += window[j];
-        }
-      }
-
-      outPos += hopOut;
-      inPos += hopIn;
-    }
-
-    for (let i = 0; i < targetLen; i++) {
-      const w = weight[i] > 1e-4 ? weight[i] : 1.0;
-      currentSamples[i] = output[i] / w;
-    }
-  }
-
-  // 3. Spectral Timbre Envelope Shaping (warm chest resonance or studio air boost)
-  if (profile.pitchHz < 135 || profile.brightnessRatio < 0.42) {
-    let low = 0;
-    for (let i = 0; i < numSamples; i++) {
-      low = low * 0.88 + currentSamples[i] * 0.12;
-      currentSamples[i] = currentSamples[i] * 0.84 + low * 0.24;
-    }
-  } else if (profile.brightnessRatio > 0.75) {
-    let prev = 0;
-    for (let i = 0; i < numSamples; i++) {
-      const high = currentSamples[i] - prev;
-      prev = currentSamples[i];
-      currentSamples[i] = currentSamples[i] + high * 0.15;
-    }
-  }
-
-  // 4. Peak normalize to prevent clipping
-  let peak = 0;
-  for (let i = 0; i < numSamples; i++) {
-    const abs = Math.abs(currentSamples[i]);
-    if (abs > peak) peak = abs;
-  }
-  const normFactor = peak > 32000 ? 31500 / peak : 1.0;
-
-  const outBytes = new Uint8Array(numSamples * 2);
-  const outView = new DataView(outBytes.buffer);
-  for (let i = 0; i < numSamples; i++) {
-    const s = Math.max(-32767, Math.min(32767, Math.round(currentSamples[i] * normFactor)));
-    outView.setInt16(i * 2, s, true);
-  }
-
-  // Pass through studio de-clicker & smoothing to eliminate any SOLA boundary crackles
-  return cleanStudioVoicePcm(outBytes, sampleRate, 44100);
+  // Preserve 100% natural neural vocal timbre, diction, and formants directly through 44.1 kHz studio mastering
+  return cleanStudioVoicePcm(pcm, sampleRate, 44100);
 };
 
 /**
- * Studio Master Conditioning Pipeline:
- * - Adaptive 5-point median impulse de-clicker & Hermite interpolator
- * - High-Fidelity Catmull-Rom cubic spline resampling to 44.1 kHz (CD Broadcast Standard)
- * - 70 Hz Butterworth high-pass rumble filter
- * - +2.0 dB Vocal Presence & Diction enhancement at 4.5 kHz for crisp, high-definition speech
- * - Smooth 15 kHz anti-hiss lowpass
- * - Adaptive downward expander noise gate (silences background hiss during pauses)
- * - Boundary cosine fades
- * - Studio soft-saturation limiter at -1.0 dBFS (29,000 peak)
+ * Broadcast Studio Master Conditioning Pipeline:
+ * - 40 Hz Butterworth high-pass subsonic filter to eliminate DC bias and mic thumps
+ * - High-Precision Catmull-Rom cubic spline interpolation upsampling to 44.1 kHz CD broadcast standard
+ * - 16.0 kHz smooth Butterworth anti-imaging low-pass filter
+ * - 3ms micro cosine boundary fade-in/out to prevent audio container pops
+ * - Pure headroom normalization to -1.0 dBFS (peak: 29,200) with smooth transparent tanh saturation
  */
 export const cleanStudioVoicePcm = (
   pcm: Uint8Array,
@@ -483,123 +380,71 @@ export const cleanStudioVoicePcm = (
   if (pcm.byteLength < 8) return pcm;
   const inNumSamples = Math.floor(pcm.byteLength / 2);
   const input = new Int16Array(pcm.buffer, pcm.byteOffset, inNumSamples);
-  const declicked = new Float32Array(inNumSamples);
-  for (let i = 0; i < inNumSamples; i++) declicked[i] = input[i];
+  const samples = new Float32Array(inNumSamples);
+  for (let i = 0; i < inNumSamples; i++) samples[i] = input[i];
 
-  // Stage 1: Adaptive Impulse De-Clicker & Slew Limiter on source audio
-  const MAX_SLEW = 11000;
-  for (let pass = 0; pass < 2; pass++) {
-    for (let i = 2; i < inNumSamples - 2; i++) {
-      const s0 = declicked[i - 2], s1 = declicked[i - 1], s2 = declicked[i], s3 = declicked[i + 1], s4 = declicked[i + 2];
-      const sorted = [s0, s1, s2, s3, s4].sort((a, b) => a - b);
-      const median = sorted[2];
-      const diff = Math.abs(s2 - median);
-      const localRms = Math.sqrt((s0 * s0 + s1 * s1 + s3 * s3 + s4 * s4) / 4);
-
-      if (diff > 3500 && (diff > localRms * 1.3 || Math.abs(s2 - s1) > MAX_SLEW)) {
-        const prevSlope = s1 - s0;
-        const nextSlope = s4 - s3;
-        declicked[i] = (s1 + s3) / 2 + (prevSlope - nextSlope) * 0.125;
-      }
-    }
-  }
-
-  for (let i = 1; i < inNumSamples; i++) {
-    const delta = declicked[i] - declicked[i - 1];
-    if (delta > MAX_SLEW) declicked[i] = declicked[i - 1] + MAX_SLEW;
-    else if (delta < -MAX_SLEW) declicked[i] = declicked[i - 1] - MAX_SLEW;
-  }
-
-  // Stage 2: High-Fidelity 44.1 kHz Catmull-Rom Cubic Spline Resampler
-  const ratio = outSampleRate / inSampleRate;
-  const outNumSamples = Math.round(inNumSamples * ratio);
-  const resampled = new Float32Array(outNumSamples);
-
-  for (let i = 0; i < outNumSamples; i++) {
-    const srcPos = i / ratio;
-    const i1 = Math.floor(srcPos);
-    const i0 = Math.max(0, i1 - 1);
-    const i2 = Math.min(inNumSamples - 1, i1 + 1);
-    const i3 = Math.min(inNumSamples - 1, i1 + 2);
-    const t = srcPos - i1;
-
-    const a0 = -0.5 * declicked[i0] + 1.5 * declicked[i1] - 1.5 * declicked[i2] + 0.5 * declicked[i3];
-    const a1 = declicked[i0] - 2.5 * declicked[i1] + 2.0 * declicked[i2] - 0.5 * declicked[i3];
-    const a2 = -0.5 * declicked[i0] + 0.5 * declicked[i2];
-    const a3 = declicked[i1];
-
-    resampled[i] = a0 * t * t * t + a1 * t * t + a2 * t + a3;
-  }
-
-  // Stage 3: Studio High-Pass Filter (70Hz Butterworth 2nd order at 44.1kHz)
-  const hpW0 = 2 * Math.PI * (70 / outSampleRate);
+  // Stage 1: High-Pass Filter (40 Hz Butterworth 2nd-order) to eliminate DC offset & sub-bass rumble
+  const hpW0 = 2 * Math.PI * (40 / inSampleRate);
   const hpAlpha = Math.sin(hpW0) / (2 * 0.7071);
   const hpCos = Math.cos(hpW0);
   const hpB0 = (1 + hpCos) / 2, hpB1 = -(1 + hpCos), hpB2 = (1 + hpCos) / 2;
   const hpA0 = 1 + hpAlpha, hpA1 = -2 * hpCos, hpA2 = 1 - hpAlpha;
 
   let hx1 = 0, hx2 = 0, hy1 = 0, hy2 = 0;
-  for (let i = 0; i < outNumSamples; i++) {
-    const x0 = resampled[i];
+  for (let i = 0; i < inNumSamples; i++) {
+    const x0 = samples[i];
     const y0 = (hpB0 / hpA0) * x0 + (hpB1 / hpA0) * hx1 + (hpB2 / hpA0) * hx2 - (hpA1 / hpA0) * hy1 - (hpA2 / hpA0) * hy2;
     hx2 = hx1; hx1 = x0; hy2 = hy1; hy1 = y0;
-    resampled[i] = y0;
+    samples[i] = y0;
   }
 
-  // Stage 4: Vocal Clarity & Diction Peaking EQ (+2.0 dB at 4.5 kHz, Q=1.0)
-  const eqW0 = 2 * Math.PI * (4500 / outSampleRate);
-  const eqA = Math.pow(10, 2.0 / 40);
-  const eqAlpha = Math.sin(eqW0) / (2 * 1.0);
-  const eqCos = Math.cos(eqW0);
-  const eqB0 = 1 + eqAlpha * eqA, eqB1 = -2 * eqCos, eqB2 = 1 - eqAlpha * eqA;
-  const eqA0 = 1 + eqAlpha / eqA, eqA1 = -2 * eqCos, eqA2 = 1 - eqAlpha / eqA;
+  // Stage 2: High-Fidelity Catmull-Rom Cubic Spline Resampler (24 kHz -> 44.1 kHz)
+  let outNumSamples = inNumSamples;
+  let resampled: Float32Array;
 
-  let ex1 = 0, ex2 = 0, ey1 = 0, ey2 = 0;
-  for (let i = 0; i < outNumSamples; i++) {
-    const x0 = resampled[i];
-    const y0 = (eqB0 / eqA0) * x0 + (eqB1 / eqA0) * ex1 + (eqB2 / eqA0) * ex2 - (eqA1 / eqA0) * ey1 - (eqA2 / eqA0) * ey2;
-    ex2 = ex1; ex1 = x0; ey2 = ey1; ey1 = y0;
-    resampled[i] = y0;
-  }
+  if (inSampleRate !== outSampleRate) {
+    const ratio = outSampleRate / inSampleRate;
+    outNumSamples = Math.round(inNumSamples * ratio);
+    resampled = new Float32Array(outNumSamples);
 
-  // Stage 5: Smooth Studio Lowpass (15 kHz Butterworth 2nd order at 44.1kHz)
-  const lpW0 = 2 * Math.PI * (15000 / outSampleRate);
-  const lpAlpha = Math.sin(lpW0) / (2 * 0.7071);
-  const lpCos = Math.cos(lpW0);
-  const lpB0 = (1 - lpCos) / 2, lpB1 = 1 - lpCos, lpB2 = (1 - lpCos) / 2;
-  const lpA0 = 1 + lpAlpha, lpA1 = -2 * lpCos, lpA2 = 1 - lpAlpha;
+    for (let i = 0; i < outNumSamples; i++) {
+      const srcPos = i / ratio;
+      const i1 = Math.floor(srcPos);
+      const i0 = Math.max(0, i1 - 1);
+      const i2 = Math.min(inNumSamples - 1, i1 + 1);
+      const i3 = Math.min(inNumSamples - 1, i1 + 2);
+      const t = srcPos - i1;
 
-  let lx1 = 0, lx2 = 0, ly1 = 0, ly2 = 0;
-  for (let i = 0; i < outNumSamples; i++) {
-    const x0 = resampled[i];
-    const y0 = (lpB0 / lpA0) * x0 + (lpB1 / lpA0) * lx1 + (lpB2 / lpA0) * lx2 - (lpA1 / lpA0) * ly1 - (lpA2 / lpA0) * ly2;
-    lx2 = lx1; lx1 = x0; ly2 = ly1; ly1 = y0;
-    resampled[i] = y0;
-  }
+      const a0 = -0.5 * samples[i0] + 1.5 * samples[i1] - 1.5 * samples[i2] + 0.5 * samples[i3];
+      const a1 = samples[i0] - 2.5 * samples[i1] + 2.0 * samples[i2] - 0.5 * samples[i3];
+      const a2 = -0.5 * samples[i0] + 0.5 * samples[i2];
+      const a3 = samples[i1];
 
-  // Stage 6: Downward Expander / Adaptive Noise Gate for Silent Pauses
-  const attackCoeff = Math.exp(-1 / (outSampleRate * 0.005));
-  const releaseCoeff = Math.exp(-1 / (outSampleRate * 0.040));
-  const gateThreshold = 75;
-  let envelope = 0;
-  let gateGain = 1.0;
-
-  for (let i = 0; i < outNumSamples; i++) {
-    const abs = Math.abs(resampled[i]);
-    envelope = abs > envelope
-      ? attackCoeff * envelope + (1 - attackCoeff) * abs
-      : releaseCoeff * envelope + (1 - releaseCoeff) * abs;
-
-    let targetGain = 1.0;
-    if (envelope < gateThreshold) {
-      targetGain = Math.pow(envelope / gateThreshold, 1.8);
+      resampled[i] = a0 * t * t * t + a1 * t * t + a2 * t + a3;
     }
-    gateGain = 0.92 * gateGain + 0.08 * targetGain;
-    resampled[i] *= gateGain;
+  } else {
+    resampled = samples;
   }
 
-  // Stage 7: Boundary 5ms Smooth Cosine Fade In & Fade Out
-  const fadeSamples = Math.min(Math.round(outSampleRate * 0.005), Math.floor(outNumSamples / 4));
+  // Stage 3: Smooth Anti-Imaging Low-Pass Filter (16 kHz 2nd-order Butterworth at outSampleRate)
+  if (outSampleRate > 32000) {
+    const lpW0 = 2 * Math.PI * (16000 / outSampleRate);
+    const lpAlpha = Math.sin(lpW0) / (2 * 0.7071);
+    const lpCos = Math.cos(lpW0);
+    const lpB0 = (1 - lpCos) / 2, lpB1 = 1 - lpCos, lpB2 = (1 - lpCos) / 2;
+    const lpA0 = 1 + lpAlpha, lpA1 = -2 * lpCos, lpA2 = 1 - lpAlpha;
+
+    let lx1 = 0, lx2 = 0, ly1 = 0, ly2 = 0;
+    for (let i = 0; i < outNumSamples; i++) {
+      const x0 = resampled[i];
+      const y0 = (lpB0 / lpA0) * x0 + (lpB1 / lpA0) * lx1 + (lpB2 / lpA0) * lx2 - (lpA1 / lpA0) * ly1 - (lpA2 / lpA0) * ly2;
+      lx2 = lx1; lx1 = x0; ly2 = ly1; ly1 = y0;
+      resampled[i] = y0;
+    }
+  }
+
+  // Stage 4: Micro 3ms Smooth Cosine Fade In & Out to eliminate container click transients
+  const fadeSamples = Math.min(Math.round(outSampleRate * 0.003), Math.floor(outNumSamples / 8));
   for (let i = 0; i < fadeSamples; i++) {
     const factorIn = 0.5 * (1 - Math.cos((Math.PI * i) / fadeSamples));
     resampled[i] *= factorIn;
@@ -607,24 +452,24 @@ export const cleanStudioVoicePcm = (
     resampled[outNumSamples - 1 - i] *= factorOut;
   }
 
-  // Stage 8: Studio Lookahead Soft-Knee Limiter & Normalization (-1.0 dBFS)
+  // Stage 5: Studio Headroom Normalization (-1.0 dBFS, peak: 29,200)
   let peak = 0;
   for (let i = 0; i < outNumSamples; i++) {
     const abs = Math.abs(resampled[i]);
     if (abs > peak) peak = abs;
   }
 
-  const targetPeak = 29000; // -1.0 dBFS
-  const gain = peak > 100 ? Math.min(targetPeak / peak, 2.0) : 1.0;
+  const targetPeak = 29200; // -1.0 dBFS
+  const gain = peak > 100 ? targetPeak / peak : 1.0;
 
   const result = new Uint8Array(outNumSamples * 2);
   const outView = new DataView(result.buffer);
   for (let i = 0; i < outNumSamples; i++) {
     let v = resampled[i] * gain;
-    if (v > 29000) {
-      v = 29000 + (32767 - 29000) * Math.tanh((v - 29000) / (32767 - 29000));
-    } else if (v < -29000) {
-      v = -29000 + (-32768 + 29000) * Math.tanh((v + 29000) / (32768 - 28000));
+    if (v > 30500) {
+      v = 30500 + (32767 - 30500) * Math.tanh((v - 30500) / (32767 - 30500));
+    } else if (v < -30500) {
+      v = -30500 + (-32768 + 30500) * Math.tanh((v + 30500) / (32768 - 30500));
     }
     const intVal = Math.max(-32768, Math.min(32767, Math.round(v)));
     outView.setInt16(i * 2, intVal, true);

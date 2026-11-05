@@ -2115,8 +2115,7 @@ VOICE CLONING DIRECTIVE — Replicate the reference speaker's exact vocal identi
     offset += b.byteLength;
   }
 
-  const transferredPcm = applyAcousticTransfer(mergedPcm, acousticProfile, 24000);
-  const masterPcm = cleanStudioVoicePcm(transferredPcm, 24000, 44100);
+  const masterPcm = cleanStudioVoicePcm(mergedPcm, 24000, 44100);
   if (onProgress) onProgress(4, 4);
   return pcmToWav(masterPcm, 44100, 1);
 };
@@ -2231,11 +2230,10 @@ Deliver strictly in ONE single consistent voice (${acousticProfile.matchedVoiceN
     offset += b.byteLength;
   }
 
-  // Apply gentle spectral envelope matching (no linear resampling, preserving 100% natural pitch and formants)
-  const finalPcm = applyAcousticTransfer(mergedPcm, acousticProfile, 24000);
+  const masterPcm = cleanStudioVoicePcm(mergedPcm, 24000, 44100);
 
   if (onProgress) onProgress(3, 3);
-  return pcmToWav(finalPcm, 24000, 1);
+  return pcmToWav(masterPcm, 44100, 1);
 };
 
 // ─── Audio Story Creator ──────────────────────────────────────────────────────
