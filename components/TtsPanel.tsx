@@ -1732,12 +1732,12 @@ Tip: Use (Style) tags for per-sentence emotion delivery — e.g. (Shouting) Mass
                   </div>
                 )}
 
-                {/* Cloud-Native Neural Voice Engine Status */}
+                {/* Chatterbox Neural Voice Engine Status */}
                 <div className="flex items-center justify-between px-3.5 py-2.5 rounded-xl bg-emerald-950/20 border border-emerald-500/20 text-[11px] font-mono">
                   <div className="flex items-center gap-2">
                     <span className="w-2 h-2 rounded-full bg-emerald-400 shadow-[0_0_8px_#34d399] animate-pulse" />
                     <span className="text-gray-300">Neural Voice Engine:</span>
-                    <span className="text-emerald-300 font-bold">Cloud-Native (24kHz SOLA Pitch-Matched)</span>
+                    <span className="text-emerald-300 font-bold">Chatterbox Neural VC Flow (Zero-Shot)</span>
                   </div>
                   <span className="text-emerald-400/80 text-[10px] font-semibold">Clean 3s–6s Target Sample</span>
                 </div>
