@@ -1942,8 +1942,8 @@ export const convertWithChatterboxVC = async (
             data: [
               { path: srcPath, meta: { _type: 'gradio.FileData' } },
               { path: refPath, meta: { _type: 'gradio.FileData' } },
-              -14,
-              -1,
+              -16,
+              -1.5,
             ],
           }),
         });
@@ -2022,12 +2022,20 @@ export const cloneVoiceZeroShot = async (
   const refAnalysis = await getReferenceVoiceAnalysis(referenceAudioFile);
   const { profile: acousticProfile, fingerprint } = refAnalysis;
 
+  const hasTamil = /[\u0B80-\u0BFF]/.test(script) || /deepavali|pattaasu|crackers|thiruverumbur|trichy/i.test(script);
+  const effectiveDialect = hasTamil ? Dialect.CHENNAI_TAMIL : dialect;
+  const phoneticNotes = hasTamil
+    ? 'CRITICAL PHONETIC ENFORCEMENT: Enunciate "கிராக்கர்ஸ்" / "Crackers" strictly with a crisp, clear "R" sound (kraa-kers / கிராக்கர்ஸ்). Never pronounce with an "L" (do not say Clackers). Deliver brand names like "கீர்த்தி கிராக்கர்ஸ்" with natural, smooth Tamil melodic intonation without sudden pitch spikes or robotic cadence jumps.'
+    : 'Clear enunciation with natural prosody and no unnatural pitch jumps.';
+
   const baseVoice: VoiceOption = {
     id: `clone_${acousticProfile.matchedVoiceName.toLowerCase()}`,
     name: acousticProfile.matchedVoiceName,
     gender: acousticProfile.detectedGender,
     apiVoiceName: acousticProfile.matchedVoiceName,
-    persona: `${fingerprint.gender}, ${fingerprint.tone}. ${fingerprint.delivery}`,
+    persona: hasTamil
+      ? 'Authentic Indian / Tamil English voiceover artist with clear enunciation and natural regional cadence'
+      : `${fingerprint.gender}, ${fingerprint.tone}. ${fingerprint.delivery}`,
     tag: 'Cloned',
     category: 'Standard',
   };
@@ -2038,9 +2046,9 @@ export const cloneVoiceZeroShot = async (
       script,
       baseVoice,
       emotion,
-      dialect,
+      effectiveDialect,
       false,
-      undefined,
+      phoneticNotes,
       undefined,
       pacing
     );
