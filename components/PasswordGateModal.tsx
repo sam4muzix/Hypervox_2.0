@@ -6,14 +6,14 @@ import {
   type UserProfile,
 } from '../services/authService';
 
-interface GoogleSignInModalProps {
+interface PasswordGateModalProps {
   isOpen: boolean;
   initialMode?: 'signin' | 'signup';
   onClose?: () => void;
   onSuccess: (user: UserProfile) => void;
 }
 
-export const GoogleSignInModal: React.FC<GoogleSignInModalProps> = ({
+export const PasswordGateModal: React.FC<PasswordGateModalProps> = ({
   isOpen,
   onClose,
   onSuccess,
@@ -191,4 +191,4 @@ export const GoogleSignInModal: React.FC<GoogleSignInModalProps> = ({
   );
 };
 
-export default GoogleSignInModal;
+export default PasswordGateModal;

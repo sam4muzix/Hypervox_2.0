@@ -5,7 +5,7 @@ import DubbingPanel from './components/DubbingPanel';
 import TranscribeTranslatePanel from './components/TranscribeTranslatePanel';
 import HypervoxIntro from './components/HypervoxIntro';
 import { IntroModal } from './components/IntroModal';
-import GoogleSignInModal from './components/GoogleSignInModal';
+import PasswordGateModal from './components/PasswordGateModal';
 import { getCurrentUser, logoutUser, startInactivityWatcher, type UserProfile } from './services/authService';
 
 enum Tab {
@@ -76,7 +76,7 @@ const App: React.FC = () => {
             }
           }}
         />
-        <GoogleSignInModal
+        <PasswordGateModal
           isOpen={showOtpModal}
           onClose={() => setShowOtpModal(false)}
           onSuccess={(user) => {
