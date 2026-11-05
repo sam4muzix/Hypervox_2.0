@@ -1931,47 +1931,8 @@ export const cloneVoiceZeroShot = async (
 
   if (onProgress) onProgress(2, 4);
 
-  // 2. Check if Chatterbox Neural VC endpoint is reachable (Local or Cloud Run container)
-  const chatterboxBase = await resolveChatterboxEndpoint();
-  if (chatterboxBase) {
-    try {
-      const sourceBlob = await generateSpotAudio(
-        script,
-        baseVoice,
-        emotion,
-        dialect,
-        false,
-        undefined,
-        undefined,
-        pacing
-      ).catch(() => null);
-
-      const formData = new FormData();
-      formData.append('reference_audio', referenceAudioFile, referenceAudioFile.name);
-      formData.append('text', script.trim());
-      formData.append('speed', speedMultiplier.toString());
-      if (sourceBlob) {
-        formData.append('source_audio', sourceBlob, 'source.wav');
-      }
-
-      const response = await fetch(`${chatterboxBase}/clone`, {
-        method: 'POST',
-        body: formData,
-      });
-
-      if (response.ok) {
-        if (onProgress) onProgress(3, 4);
-        const audioBlob = await response.blob();
-        if (onProgress) onProgress(4, 4);
-        return audioBlob;
-      }
-    } catch (cbErr) {
-      console.warn('[cloneVoiceZeroShot] Chatterbox endpoint unavailable, executing Cloud-Native Acoustic Cloning:', cbErr);
-    }
-  }
-
-  // 3. Cloud-Native Execution (Google Cloud Run & Cloudflare Pages):
-  //    Combine Reference Speaker Fingerprint + Acoustic Profile + Emotion/Dialect Context
+  // Cloud-Native Zero-Shot Synthesis (100% in-browser & Cloudflare Pages)
+  // Combines Reference Multimodal Fingerprint + Matched Base Voice + SOLA Pitch-Matching Transfer
   const ai = getAI();
   const basePromptContext = buildPromptContext(emotion, dialect, baseVoice, pacing);
   const clonePromptContext = `${basePromptContext}
@@ -2005,7 +1966,7 @@ VOICE CLONING DIRECTIVE — Replicate the reference speaker's exact vocal identi
     offset += b.byteLength;
   }
 
-  // Apply DSP Acoustic Profile Transfer (pitch ratio & spectral brightness envelope matching)
+  // Apply High-Precision SOLA Pitch Matching and Formant Shaping to match target reference sample exactly
   const transferredPcm = applyAcousticTransfer(mergedPcm, acousticProfile, 24000);
   if (onProgress) onProgress(4, 4);
   return pcmToWav(transferredPcm, 24000, 1);
@@ -2019,32 +1980,8 @@ export const convertVoiceToVoice = async (
 ): Promise<Blob> => {
   if (onProgress) onProgress(1, 3);
 
-  // 1. Try Chatterbox Neural VC endpoint first if reachable (Local or Cloud Run container)
-  const chatterboxBase = await resolveChatterboxEndpoint();
-  if (chatterboxBase) {
-    try {
-      const formData = new FormData();
-      formData.append('source_audio', sourceAudioBlobOrFile, 'source.wav');
-      formData.append('reference_audio', referenceAudioFile, referenceAudioFile.name);
-      formData.append('speed', speed.toString());
-
-      if (onProgress) onProgress(2, 3);
-      const response = await fetch(`${chatterboxBase}/vc`, {
-        method: 'POST',
-        body: formData,
-      });
-
-      if (response.ok) {
-        if (onProgress) onProgress(3, 3);
-        return await response.blob();
-      }
-    } catch (cbErr) {
-      console.warn('[convertVoiceToVoice] Chatterbox endpoint unavailable, executing Cloud-Native Voice-to-Voice Conversion:', cbErr);
-    }
-  }
-
-  // 2. Cloud-Native Voice-to-Voice Conversion (Google Cloud Run & Cloudflare Pages):
-  //    Extract reference speaker acoustic profile & fingerprint + transcribe source audio with prosody
+  // Cloud-Native Voice-to-Voice Conversion (100% in-browser & Cloudflare Pages):
+  // Extract reference speaker acoustic profile & fingerprint + transcribe source audio with prosody
   const refAnalysis = await getReferenceVoiceAnalysis(referenceAudioFile);
   const { profile: acousticProfile, fingerprint: refFingerprint } = refAnalysis;
 

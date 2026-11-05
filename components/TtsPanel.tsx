@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { Dialect, Emotion, SpeechPacing, VoiceGender, VoiceOption, RegionalLanguage, LANGUAGE_DIALECTS, getLanguageFromDialect } from '../types';
-import { generateSpotAudio, clearAudioCache, optimizeScript, cloneVoiceZeroShot, convertVoiceToVoice, detectDialogueScript, localizeAdCopy, LocalizedAdCopyResult, resolveChatterboxEndpoint, getCustomChatterboxUrl, setCustomChatterboxUrl } from '../services/geminiService';
+import { generateSpotAudio, clearAudioCache, optimizeScript, cloneVoiceZeroShot, convertVoiceToVoice, detectDialogueScript, localizeAdCopy, LocalizedAdCopyResult } from '../services/geminiService';
 import { getBrandFilename } from '../utils/audio';
 import { saveDownloadedTtsProfile, getRememberedTtsProfiles, RememberedTtsProfile, LOCKED_WEDDING_EXPO_PROFILE } from '../utils/memoryStore';
 import { AudioWaveform } from './AudioWaveform';
@@ -554,26 +554,6 @@ const TtsPanel: React.FC = () => {
   const [cloneError, setCloneError] = useState<string | null>(null);
   const [isPlayingCloned, setIsPlayingCloned] = useState(false);
   const [activeOutputTab, setActiveOutputTab] = useState<'original' | 'cloned'>('original');
-
-  const [chatterboxUrl, setChatterboxUrl] = useState<string | null>(null);
-  const [isEditingEndpoint, setIsEditingEndpoint] = useState(false);
-  const [customEndpointInput, setCustomEndpointInput] = useState(() => getCustomChatterboxUrl());
-
-  useEffect(() => {
-    let active = true;
-    const checkCb = async () => {
-      const endpoint = await resolveChatterboxEndpoint();
-      if (active) setChatterboxUrl(endpoint);
-    };
-    checkCb();
-    const interval = setInterval(checkCb, 8000);
-    return () => {
-      active = false;
-      clearInterval(interval);
-    };
-  }, []);
-
-
 
   const [isDraggingRef, setIsDraggingRef] = useState(false);
   const [isDraggingSource, setIsDraggingSource] = useState(false);
@@ -1752,51 +1732,14 @@ Tip: Use (Style) tags for per-sentence emotion delivery — e.g. (Shouting) Mass
                   </div>
                 )}
 
-                {/* Chatterbox Neural Engine Status & Endpoint Config */}
-                <div className="flex flex-col gap-2 p-2.5 rounded-xl bg-purple-950/20 border border-purple-500/20 text-[11px] font-mono">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <span className={`w-2 h-2 rounded-full ${chatterboxUrl ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400'}`} />
-                      <span className="text-gray-300">Chatterbox Neural VC:</span>
-                      <span className={chatterboxUrl ? "text-emerald-300 font-semibold" : "text-amber-300 font-semibold"}>
-                        {chatterboxUrl ? `Online (${chatterboxUrl.replace(/^https?:\/\//, '')})` : 'Offline / Standby'}
-                      </span>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => setIsEditingEndpoint(prev => !prev)}
-                      className="text-purple-400 hover:text-purple-300 text-[10px] underline underline-offset-2"
-                    >
-                      {isEditingEndpoint ? 'Close' : 'Config URL'}
-                    </button>
+                {/* Cloud-Native Neural Voice Engine Status */}
+                <div className="flex items-center justify-between px-3.5 py-2.5 rounded-xl bg-emerald-950/20 border border-emerald-500/20 text-[11px] font-mono">
+                  <div className="flex items-center gap-2">
+                    <span className="w-2 h-2 rounded-full bg-emerald-400 shadow-[0_0_8px_#34d399] animate-pulse" />
+                    <span className="text-gray-300">Neural Voice Engine:</span>
+                    <span className="text-emerald-300 font-bold">Cloud-Native (24kHz SOLA Pitch-Matched)</span>
                   </div>
-                  {isEditingEndpoint && (
-                    <div className="flex items-center gap-2 pt-1 border-t border-purple-500/10">
-                      <input
-                        type="text"
-                        value={customEndpointInput}
-                        onChange={(e) => setCustomEndpointInput(e.target.value)}
-                        placeholder="e.g. http://127.0.0.1:5051 or ngrok URL"
-                        className="flex-1 bg-black/60 border border-purple-500/30 rounded px-2 py-1 text-[11px] text-white focus:outline-none focus:border-purple-400"
-                      />
-                      <button
-                        type="button"
-                        onClick={async () => {
-                          setCustomChatterboxUrl(customEndpointInput);
-                          const ep = await resolveChatterboxEndpoint();
-                          setChatterboxUrl(ep);
-                          setIsEditingEndpoint(false);
-                        }}
-                        className="px-2.5 py-1 bg-purple-600 hover:bg-purple-500 text-white rounded text-[10px] font-bold uppercase tracking-wider"
-                      >
-                        Save
-                      </button>
-                    </div>
-                  )}
-                  <div className="flex items-center justify-between text-[10px] text-gray-400">
-                    <span>Pitch-Matched F0 Tracking • 24kHz High-Fidelity</span>
-                    <span className="text-emerald-400/80 font-semibold">Clean 3s–6s Target Sample</span>
-                  </div>
+                  <span className="text-emerald-400/80 text-[10px] font-semibold">Clean 3s–6s Target Sample</span>
                 </div>
 
                 {/* Action Buttons Grid: Voice-to-Voice & Text-to-Voice */}

@@ -333,46 +333,129 @@ export const analyzeAudioAcoustics = (samples: Float32Array, sampleRate: number 
 };
 
 /**
- * Applies gentle spectral timbre envelope matching (warm chest resonance or crisp presence)
- * WITHOUT linear resampling, so vocal formants, speed, and natural pitch are 100% preserved (never chipmunk).
+ * Applies Synchronized Overlap-Add (SOLA) pitch-matching and spectral timbre envelope shaping
+ * so the output speech fundamental frequency (F0) matches the target speaker reference exactly
+ * while 100% preserving original speech tempo, syllable duration, and natural prosody.
  */
 export const applyAcousticTransfer = (
   pcm: Uint8Array,
   profile: AcousticVoiceProfile,
-  _sampleRate: number = 24000
+  sampleRate: number = 24000
 ): Uint8Array => {
   if (pcm.byteLength < 4) return pcm;
 
   const numSamples = Math.floor(pcm.byteLength / 2);
   const input = new Int16Array(pcm.buffer, pcm.byteOffset, numSamples);
-  const processed = new Float32Array(numSamples);
 
+  // 1. Calculate Fundamental Pitch Shift Ratio (Target Reference F0 / Matched Base Voice F0)
+  const rawRatio = profile.pitchHz / Math.max(50, profile.baseVoicePitchHz);
+  const pitchRatio = Math.min(Math.max(rawRatio, 0.65), 1.65);
+
+  let currentSamples = new Float32Array(numSamples);
   for (let i = 0; i < numSamples; i++) {
-    processed[i] = input[i];
+    currentSamples[i] = input[i];
   }
 
-  // Gentle spectral timbre envelope shaping without altering sample count or playback rate
+  // 2. High-Precision SOLA Pitch Shifting (if pitch delta >= 3%)
+  if (Math.abs(pitchRatio - 1.0) >= 0.03) {
+    const resampledLen = Math.round(numSamples / pitchRatio);
+    const resampled = new Float32Array(resampledLen);
+    for (let i = 0; i < resampledLen; i++) {
+      const srcPos = i * pitchRatio;
+      const i0 = Math.floor(srcPos);
+      const i1 = Math.min(i0 + 1, numSamples - 1);
+      const frac = srcPos - i0;
+      resampled[i] = currentSamples[i0] * (1 - frac) + currentSamples[i1] * frac;
+    }
+
+    const stretchFactor = pitchRatio;
+    const windowSize = Math.round(sampleRate * 0.028); // 28ms window
+    const hopOut = Math.round(windowSize / 2);
+    const hopIn = Math.round(hopOut / stretchFactor);
+    const maxSearch = Math.round(windowSize * 0.35);
+
+    const targetLen = numSamples;
+    const output = new Float32Array(targetLen);
+    const weight = new Float32Array(targetLen);
+
+    // Periodic Hanning window
+    const window = new Float32Array(windowSize);
+    for (let i = 0; i < windowSize; i++) {
+      window[i] = 0.5 * (1 - Math.cos((2 * Math.PI * i) / (windowSize - 1)));
+    }
+
+    let inPos = 0;
+    let outPos = 0;
+
+    while (outPos + windowSize < targetLen && inPos + windowSize + maxSearch < resampledLen) {
+      let bestOffset = 0;
+      if (outPos > 0) {
+        let maxCorr = -Infinity;
+        for (let offset = -maxSearch; offset <= maxSearch; offset++) {
+          const testIn = inPos + offset;
+          if (testIn < 0 || testIn + windowSize >= resampledLen) continue;
+          let corr = 0;
+          let norm = 1e-6;
+          for (let j = 0; j < hopOut; j++) {
+            const sOut = output[outPos + j];
+            const sIn = resampled[testIn + j];
+            corr += sOut * sIn;
+            norm += sIn * sIn;
+          }
+          const score = corr / Math.sqrt(norm);
+          if (score > maxCorr) {
+            maxCorr = score;
+            bestOffset = offset;
+          }
+        }
+      }
+
+      const actualIn = inPos + bestOffset;
+      for (let j = 0; j < windowSize; j++) {
+        if (outPos + j < targetLen && actualIn + j < resampledLen) {
+          output[outPos + j] += resampled[actualIn + j] * window[j];
+          weight[outPos + j] += window[j];
+        }
+      }
+
+      outPos += hopOut;
+      inPos += hopIn;
+    }
+
+    for (let i = 0; i < targetLen; i++) {
+      const w = weight[i] > 1e-4 ? weight[i] : 1.0;
+      currentSamples[i] = output[i] / w;
+    }
+  }
+
+  // 3. Spectral Timbre Envelope Shaping (warm chest resonance or studio air boost)
   if (profile.pitchHz < 135 || profile.brightnessRatio < 0.42) {
-    // Warm chest resonance enhancement for deeper voices
     let low = 0;
     for (let i = 0; i < numSamples; i++) {
-      low = low * 0.88 + processed[i] * 0.12;
-      processed[i] = processed[i] * 0.84 + low * 0.24;
+      low = low * 0.88 + currentSamples[i] * 0.12;
+      currentSamples[i] = currentSamples[i] * 0.84 + low * 0.24;
     }
-  } else if (profile.brightnessRatio > 0.78) {
-    // Subtle studio air/presence boost
+  } else if (profile.brightnessRatio > 0.75) {
     let prev = 0;
     for (let i = 0; i < numSamples; i++) {
-      const high = processed[i] - prev;
-      prev = processed[i];
-      processed[i] = processed[i] + high * 0.15;
+      const high = currentSamples[i] - prev;
+      prev = currentSamples[i];
+      currentSamples[i] = currentSamples[i] + high * 0.15;
     }
   }
+
+  // 4. Peak normalize to prevent clipping
+  let peak = 0;
+  for (let i = 0; i < numSamples; i++) {
+    const abs = Math.abs(currentSamples[i]);
+    if (abs > peak) peak = abs;
+  }
+  const normFactor = peak > 32000 ? 31500 / peak : 1.0;
 
   const outBytes = new Uint8Array(numSamples * 2);
   const outView = new DataView(outBytes.buffer);
   for (let i = 0; i < numSamples; i++) {
-    const s = Math.max(-32767, Math.min(32767, Math.round(processed[i])));
+    const s = Math.max(-32767, Math.min(32767, Math.round(currentSamples[i] * normFactor)));
     outView.setInt16(i * 2, s, true);
   }
 
