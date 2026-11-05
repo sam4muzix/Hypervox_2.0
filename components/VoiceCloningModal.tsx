@@ -1,5 +1,6 @@
 import React, { useRef, useState } from 'react';
 import { AudioWaveform } from './AudioWaveform';
+import { convertBlobToMp3_128k } from '../utils/audio';
 
 export interface VoiceCloningModalProps {
   isOpen: boolean;
@@ -362,14 +363,52 @@ export const VoiceCloningModal: React.FC<VoiceCloningModalProps> = ({
             </div>
           )}
 
-          {/* Cloned Audio Preview inside modal */}
+          {/* Cloned Audio Preview & Download inside modal */}
           {clonedAudioUrl && (
-            <div className="mt-3 p-3.5 bg-purple-950/40 border border-purple-500/30 rounded-xl space-y-2">
+            <div className="mt-3 p-3.5 bg-purple-950/40 border border-purple-500/30 rounded-xl space-y-2.5">
               <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-purple-300">Cloned Audio Output</span>
-                <span className="text-[10px] text-emerald-400 font-mono font-semibold">Ready</span>
+                <span className="text-xs font-bold text-purple-300">Studio Converted Audio</span>
+                <span className="text-[10px] text-emerald-400 font-mono font-semibold">44.1 kHz Broadcast Ready</span>
               </div>
               <audio controls src={clonedAudioUrl} className="w-full custom-audio-player" />
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
+                <a
+                  href={clonedAudioUrl}
+                  download="studio_voice_converted_44khz.wav"
+                  className="py-2 px-3 rounded-lg bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs uppercase tracking-wider text-center flex items-center justify-center gap-1.5 transition-all shadow-md"
+                >
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
+                  </svg>
+                  <span>Download WAV (44.1kHz)</span>
+                </a>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    if (!clonedAudioUrl) return;
+                    try {
+                      const rawBlob = await fetch(clonedAudioUrl).then(r => r.blob());
+                      const mp3Blob = await convertBlobToMp3_128k(rawBlob);
+                      const dlUrl = URL.createObjectURL(mp3Blob);
+                      const a = document.createElement('a');
+                      a.href = dlUrl;
+                      a.download = "studio_voice_converted_128k.mp3";
+                      document.body.appendChild(a);
+                      a.click();
+                      document.body.removeChild(a);
+                      URL.revokeObjectURL(dlUrl);
+                    } catch (e) {
+                      console.error("MP3 conversion failed:", e);
+                    }
+                  }}
+                  className="py-2 px-3 rounded-lg bg-emerald-950/50 hover:bg-emerald-900/70 border border-emerald-500/40 text-emerald-300 hover:text-white font-bold text-xs uppercase tracking-wider text-center flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-md"
+                >
+                  <svg className="w-3.5 h-3.5 text-emerald-400" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
+                  </svg>
+                  <span>Download MP3 (128k • 44.1kHz)</span>
+                </button>
+              </div>
             </div>
           )}
         </div>

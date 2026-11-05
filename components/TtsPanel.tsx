@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { Dialect, Emotion, SpeechPacing, VoiceGender, VoiceOption, RegionalLanguage, LANGUAGE_DIALECTS, getLanguageFromDialect } from '../types';
 import { generateSpotAudio, clearAudioCache, optimizeScript, cloneVoiceZeroShot, convertVoiceToVoice, detectDialogueScript, localizeAdCopy, LocalizedAdCopyResult } from '../services/geminiService';
-import { getBrandFilename } from '../utils/audio';
+import { getBrandFilename, convertBlobToMp3_128k } from '../utils/audio';
 import { saveDownloadedTtsProfile, getRememberedTtsProfiles, RememberedTtsProfile, LOCKED_WEDDING_EXPO_PROFILE } from '../utils/memoryStore';
 import { AudioWaveform } from './AudioWaveform';
 import { VoiceCloningModal } from './VoiceCloningModal';
@@ -1469,11 +1469,11 @@ Tip: Use (Style) tags for per-sentence emotion delivery — e.g. (Shouting) Mass
                 />
               )}
               
-              {/* Dual Download Options */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
+              {/* Studio Master Download Options & Actions */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-2">
                 <a 
                   href={audioUrl} 
-                  download={getBrandFilename(script, 'master_audio', 'wav')} 
+                  download={getBrandFilename(script, 'master_44khz', 'wav')} 
                   onClick={() => {
                     saveDownloadedTtsProfile({
                       script,
@@ -1484,16 +1484,48 @@ Tip: Use (Style) tags for per-sentence emotion delivery — e.g. (Shouting) Mass
                       pacing,
                     });
                     setRememberedProfiles(getRememberedTtsProfiles());
-                    setToastMessage("Master generated audio downloaded & profile saved.");
+                    setToastMessage("Master 44.1kHz WAV downloaded & profile saved.");
                     setTimeout(() => setToastMessage(null), 3500);
                   }}
-                  className="liquid-btn-primary text-center font-bold py-3 rounded-xl text-xs uppercase tracking-wider flex items-center justify-center gap-2"
+                  className="liquid-btn-primary text-center font-bold py-3 rounded-xl text-xs uppercase tracking-wider flex items-center justify-center gap-2 shadow-lg"
                 >
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
                   </svg>
-                  <span>Download Master WAV</span>
+                  <span>Download WAV (44.1kHz)</span>
                 </a>
+
+                {/* 128 kbps 44.1kHz MP3 Download */}
+                <button
+                  type="button"
+                  onClick={async () => {
+                    if (!audioUrl) return;
+                    try {
+                      setToastMessage("Encoding 128 kbps 44.1kHz MP3...");
+                      const rawBlob = await fetch(audioUrl).then(r => r.blob());
+                      const mp3Blob = await convertBlobToMp3_128k(rawBlob);
+                      const dlUrl = URL.createObjectURL(mp3Blob);
+                      const a = document.createElement('a');
+                      a.href = dlUrl;
+                      a.download = getBrandFilename(script, 'master_128k', 'mp3');
+                      document.body.appendChild(a);
+                      a.click();
+                      document.body.removeChild(a);
+                      URL.revokeObjectURL(dlUrl);
+                      setToastMessage("128 kbps 44.1kHz MP3 downloaded.");
+                      setTimeout(() => setToastMessage(null), 3500);
+                    } catch (e) {
+                      console.error("MP3 export failed:", e);
+                    }
+                  }}
+                  className="bg-emerald-950/40 hover:bg-emerald-900/60 text-emerald-300 hover:text-white border border-emerald-500/40 font-bold py-3 px-3 rounded-xl text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition-all cursor-pointer shadow-lg"
+                  title="Download broadcast-standard 128 kbps 44.1kHz MP3"
+                >
+                  <svg className="w-4 h-4 text-emerald-400" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
+                  </svg>
+                  <span>Download MP3 (128k • 44.1kHz)</span>
+                </button>
 
                 {/* Word Precision Audio Editor Button (Inpainting) */}
                 <button
@@ -1505,33 +1537,39 @@ Tip: Use (Style) tags for per-sentence emotion delivery — e.g. (Shouting) Mass
                   <svg className="w-4 h-4 text-indigo-400" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0115.75 21H5.25A2.25 2.25 0 013 18.75V8.25A2.25 2.25 0 015.25 6H10" />
                   </svg>
-                  <span>Edit Words Alone (Popup Editor)</span>
+                  <span>Edit Words Alone (Popup)</span>
                 </button>
 
                 {clonedAudioUrl ? (
-                  <a 
-                    href={clonedAudioUrl} 
-                    download={getBrandFilename(script, 'cloned_voice', 'wav')} 
-                    onClick={() => {
-                      saveDownloadedTtsProfile({
-                        script,
-                        notes: referenceVoiceFile ? `${notes} [Cloned Voice: ${referenceVoiceFile.name}]`.trim() : notes,
-                        voiceId: `cloned_${referenceVoiceFile?.name || 'custom'}`,
-                        emotion,
-                        dialect,
-                        pacing,
-                      });
-                      setRememberedProfiles(getRememberedTtsProfiles());
-                      setToastMessage("Cloned custom voice audio downloaded & profile saved.");
-                      setTimeout(() => setToastMessage(null), 3500);
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      if (!clonedAudioUrl) return;
+                      try {
+                        setToastMessage("Encoding 128 kbps 44.1kHz MP3...");
+                        const rawBlob = await fetch(clonedAudioUrl).then(r => r.blob());
+                        const mp3Blob = await convertBlobToMp3_128k(rawBlob);
+                        const dlUrl = URL.createObjectURL(mp3Blob);
+                        const a = document.createElement('a');
+                        a.href = dlUrl;
+                        a.download = getBrandFilename(script, 'cloned_128k', 'mp3');
+                        document.body.appendChild(a);
+                        a.click();
+                        document.body.removeChild(a);
+                        URL.revokeObjectURL(dlUrl);
+                        setToastMessage("Cloned 128 kbps 44.1kHz MP3 downloaded.");
+                        setTimeout(() => setToastMessage(null), 3500);
+                      } catch (e) {
+                        console.error("Cloned MP3 export failed:", e);
+                      }
                     }}
-                    className="bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white text-center font-bold py-3 rounded-xl text-xs uppercase tracking-wider flex items-center justify-center gap-2 shadow-lg transition-all"
+                    className="bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white text-center font-bold py-3 rounded-xl text-xs uppercase tracking-wider flex items-center justify-center gap-2 shadow-lg transition-all cursor-pointer"
                   >
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M19.125 3.375c2.25 0 3.375 1.125 3.375 3.375v10.5c0 2.25-1.125 3.375-3.375 3.375H4.875C2.625 20.625 1.5 19.5 1.5 17.25V6.75c0-2.25 1.125-3.375 3.375-3.375h14.25zM12 7.5v9m-3.75-6v3m7.5-3v3m-11.25-1.5v0m15 0v0" />
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
                     </svg>
-                    <span>Download Cloned WAV</span>
-                  </a>
+                    <span>Download Cloned MP3 (128k)</span>
+                  </button>
                 ) : (
                   <button 
                     onClick={() => {

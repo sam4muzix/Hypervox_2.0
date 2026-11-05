@@ -1444,7 +1444,8 @@ export const generateSpotAudio = async (
   }
 
   if (validBuffers.length === 1) {
-    return pcmToWav(validBuffers[0], 24000, 1);
+    const masterPcm = cleanStudioVoicePcm(validBuffers[0], 24000, 44100);
+    return pcmToWav(masterPcm, 44100, 1);
   }
 
   const SILENCE_MS = 50;
@@ -1467,7 +1468,8 @@ export const generateSpotAudio = async (
     }
   }
 
-  return pcmToWav(merged, 24000, 1);
+  const masterPcm = cleanStudioVoicePcm(merged, 24000, 44100);
+  return pcmToWav(masterPcm, 44100, 1);
 };
 
 export const syncAudioPerformance = async (
@@ -2114,8 +2116,9 @@ VOICE CLONING DIRECTIVE — Replicate the reference speaker's exact vocal identi
   }
 
   const transferredPcm = applyAcousticTransfer(mergedPcm, acousticProfile, 24000);
+  const masterPcm = cleanStudioVoicePcm(transferredPcm, 24000, 44100);
   if (onProgress) onProgress(4, 4);
-  return pcmToWav(transferredPcm, 24000, 1);
+  return pcmToWav(masterPcm, 44100, 1);
 };
 
 export const convertVoiceToVoice = async (
