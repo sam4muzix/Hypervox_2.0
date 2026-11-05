@@ -536,6 +536,34 @@ const TtsPanel: React.FC = () => {
   const [dialogueFemaleVoice, setDialogueFemaleVoice] = useState<string>('Aoede');
   const [dialogueMaleVoice, setDialogueMaleVoice] = useState<string>('Fenrir');
 
+  // Filter matching helper for dynamic voice artist catalog
+  const isVoiceMatchingFilter = useCallback((v: VoiceOption, filter: string): boolean => {
+    if (filter === 'ALL') return true;
+    if (filter === 'Male') return v.gender === VoiceGender.MALE && v.category !== 'Kids & Animation' && v.id !== 'custom_cloned_voice';
+    if (filter === 'Female') return v.gender === VoiceGender.FEMALE && v.category !== 'Kids & Animation';
+    if (filter === 'Kids & Animation') return v.category === 'Kids & Animation';
+    if (filter === 'Custom Voice') return v.id === 'custom_cloned_voice' || v.category === 'Custom Voice';
+    return v.category === filter;
+  }, []);
+
+  const filteredVoices = useMemo(() => {
+    return AVAILABLE_VOICES.filter(v => isVoiceMatchingFilter(v, voiceFilter));
+  }, [voiceFilter, isVoiceMatchingFilter]);
+
+  const handleSelectVoiceFilter = (filterKey: string) => {
+    setVoiceFilter(filterKey);
+    if (filterKey === 'Custom Voice') {
+      const cv = AVAILABLE_VOICES.find(v => v.id === 'custom_cloned_voice');
+      if (cv) setSelectedVoice(cv);
+      setIsCloneModalOpen(true);
+      return;
+    }
+    const matching = AVAILABLE_VOICES.filter(v => isVoiceMatchingFilter(v, filterKey));
+    if (matching.length > 0 && !matching.some(v => v.id === selectedVoice.id)) {
+      setSelectedVoice(matching[0]);
+    }
+  };
+
   // Sync dialogue voice defaults when user selects a specific artist in catalog
   useEffect(() => {
     if (selectedVoice.gender === VoiceGender.FEMALE && selectedVoice.apiVoiceName !== 'multi') {
@@ -1044,52 +1072,56 @@ const TtsPanel: React.FC = () => {
                   <button
                     type="button"
                     onClick={() => setIsCloneModalOpen(true)}
-                    className="text-[10px] text-purple-400 hover:text-purple-300 font-bold uppercase tracking-wider flex items-center gap-1 px-2 py-0.5 rounded bg-purple-500/10 border border-purple-500/30"
+                    className="text-[10px] text-purple-400 hover:text-purple-300 font-bold uppercase tracking-wider flex items-center gap-1 px-2 py-0.5 rounded bg-purple-500/10 border border-purple-500/30 cursor-pointer"
                   >
                     <span>Clone Studio</span>
                     <span>↗</span>
                   </button>
-                  <span className="text-[10px] text-emerald-400 font-mono">
-                    {AVAILABLE_VOICES.length} ARTISTS
+                  <span className="text-[10px] text-emerald-400 font-mono transition-all">
+                    {filteredVoices.length} {filteredVoices.length === 1 ? 'ARTIST' : 'ARTISTS'}
                   </span>
                 </div>
               </div>
 
-              {/* Quick Filter Pills */}
+              {/* Quick Filter Pills (All, Male, Female, Kids, Custom & Styles) */}
               <div className="flex items-center gap-1.5 overflow-x-auto pb-1.5 mb-2.5 custom-scrollbar text-[10px]">
-                {['ALL', 'Custom Voice', 'Chorus & Multi-Voice', 'Kids & Animation', 'Male', 'Female', 'Radio & Commercial', 'Cinematic & Bass', 'Luxury & Smooth', 'Natural & Casual', 'Corporate & News'].map(filter => {
-                  const isActive = voiceFilter === filter;
+                {[
+                  { id: 'ALL', label: 'All' },
+                  { id: 'Male', label: 'Male' },
+                  { id: 'Female', label: 'Female' },
+                  { id: 'Kids & Animation', label: 'Kids & Animation' },
+                  { id: 'Custom Voice', label: 'Custom Voice' },
+                  { id: 'Radio & Commercial', label: 'Radio & Commercial' },
+                  { id: 'Cinematic & Bass', label: 'Cinematic & Bass' },
+                  { id: 'Luxury & Smooth', label: 'Luxury & Smooth' },
+                  { id: 'Natural & Casual', label: 'Natural & Casual' },
+                  { id: 'Corporate & News', label: 'Corporate & News' },
+                  { id: 'Chorus & Multi-Voice', label: 'Chorus & Multi-Voice' },
+                ].map(tab => {
+                  const isActive = voiceFilter === tab.id;
+                  const count = AVAILABLE_VOICES.filter(v => isVoiceMatchingFilter(v, tab.id)).length;
                   return (
                     <button
-                      key={filter}
-                      onClick={() => {
-                        setVoiceFilter(filter);
-                        if (filter === 'Custom Voice') {
-                          const cv = AVAILABLE_VOICES.find(v => v.id === 'custom_cloned_voice');
-                          if (cv) setSelectedVoice(cv);
-                          setIsCloneModalOpen(true);
-                        }
-                      }}
-                      className={`px-2.5 py-1 rounded-lg border whitespace-nowrap transition-all font-semibold ${
+                      key={tab.id}
+                      onClick={() => handleSelectVoiceFilter(tab.id)}
+                      className={`px-2.5 py-1 rounded-lg border whitespace-nowrap transition-all font-semibold flex items-center gap-1 cursor-pointer select-none ${
                         isActive
                           ? 'bg-emerald-500 text-black border-emerald-400 shadow-sm'
                           : 'bg-black/30 border-white/10 text-gray-400 hover:text-white hover:border-white/20'
                       }`}
                     >
-                      {filter === 'ALL' ? 'All Voices' : filter}
+                      <span>{tab.label}</span>
+                      <span className={`text-[9px] px-1 py-0.2 rounded font-mono ${isActive ? 'bg-black/20 text-black font-bold' : 'bg-white/5 text-gray-400'}`}>
+                        {count}
+                      </span>
                     </button>
                   );
                 })}
               </div>
 
-              {/* Voice Cards Grid */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                {AVAILABLE_VOICES.filter(v => {
-                  if (voiceFilter === 'ALL') return true;
-                  if (voiceFilter === 'Male') return v.gender === VoiceGender.MALE;
-                  if (voiceFilter === 'Female') return v.gender === VoiceGender.FEMALE;
-                  return v.category === voiceFilter;
-                }).map((v) => {
+              {/* Voice Cards Grid with Dynamic Resizing */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 transition-all duration-300 ease-in-out">
+                {filteredVoices.map((v) => {
                   const isSelected = selectedVoice.id === v.id;
                   const isCustom = v.id === 'custom_cloned_voice';
                   return (
@@ -1100,11 +1132,11 @@ const TtsPanel: React.FC = () => {
                         if (isCustom) setIsCloneModalOpen(true);
                       }}
                       title={v.persona}
-                      className={`p-2.5 rounded-xl border text-left transition-all select-none relative flex flex-col justify-between ${
+                      className={`p-2.5 rounded-xl border text-left transition-all duration-200 select-none relative flex flex-col justify-between cursor-pointer ${
                         isSelected 
                           ? isCustom
-                            ? 'bg-purple-500/20 border-purple-400 text-white shadow-lg ring-1 ring-purple-500/50'
-                            : 'bg-emerald-500/20 border-emerald-400 text-white shadow-lg ring-1 ring-emerald-500/50' 
+                            ? 'bg-purple-500/20 border-purple-400 text-white shadow-lg ring-1 ring-purple-500/50 scale-[1.01]'
+                            : 'bg-emerald-500/20 border-emerald-400 text-white shadow-lg ring-1 ring-emerald-500/50 scale-[1.01]' 
                           : 'bg-black/30 border-white/5 text-gray-400 hover:border-white/20 hover:text-white hover:bg-white/[0.03]'
                       }`}
                     >
@@ -1129,7 +1161,11 @@ const TtsPanel: React.FC = () => {
                         <span className={`capitalize font-medium ${
                           isCustom
                             ? 'text-purple-400'
-                            : v.gender === VoiceGender.MALE ? 'text-sky-400/80' : 'text-rose-400/80'
+                            : v.category === 'Kids & Animation'
+                              ? 'text-amber-400'
+                              : v.gender === VoiceGender.MALE
+                                ? 'text-sky-400/90'
+                                : 'text-rose-400/90'
                         }`}>
                           {isCustom ? 'Custom Cloned Voice' : (v.category === 'Kids & Animation' ? 'Kid' : v.gender)}
                         </span>
