@@ -901,12 +901,11 @@ export const resolveChatterboxEndpoint = async (): Promise<string | null> => {
   const storedUrl = getCustomChatterboxUrl();
   const envUrl = (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_CHATTERBOX_URL) || '';
 
+  const isLocalOrigin = typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
   const candidates = Array.from(new Set([
     storedUrl ? storedUrl.replace(/\/$/, '') : '',
     envUrl ? envUrl.replace(/\/$/, '') : '',
-    'http://127.0.0.1:5051',
-    'http://localhost:5051',
-    '/api/chatterbox',
+    ...(isLocalOrigin ? ['http://127.0.0.1:5051', '/api/chatterbox'] : ['/api/chatterbox', 'http://127.0.0.1:5051']),
   ])).filter(Boolean);
 
   for (const base of candidates) {
@@ -1899,6 +1898,144 @@ Respond ONLY with a valid JSON object (no markdown, no backticks):
   return cached;
 };
 
+// ─── Neural Voice Synthesis Engine (Chatterbox Zero-Shot Flow Matching) ───────
+export const synthesizeWithChatterbox = async (
+  referenceAudio: Blob | File,
+  text: string,
+  options: {
+    speed?: number;
+    temperature?: number;
+    exaggeration?: number;
+    onProgress?: (step: number, total: number) => void;
+  } = {}
+): Promise<Blob | null> => {
+  const cleanText = text.replace(/\[[^\]]*\]/g, '').replace(/<[^>]*>/g, '').trim();
+  if (!cleanText) return null;
+
+  const endpoint = await resolveChatterboxEndpoint();
+  const targetEndpoints = endpoint
+    ? [endpoint, '/api/chatterbox', 'https://resembleai-chatterbox.hf.space']
+    : ['/api/chatterbox', 'https://resembleai-chatterbox.hf.space'];
+
+  const uniqueEndpoints = Array.from(new Set(targetEndpoints));
+  const textChunks = cleanText.length <= 250 ? [cleanText] : splitIntoChunks(cleanText, 250);
+
+  for (const base of uniqueEndpoints) {
+    try {
+      if (options.onProgress) options.onProgress(2, 4);
+
+      if (base.includes('hf.space')) {
+        const uploadFd = new FormData();
+        uploadFd.append('files', referenceAudio, (referenceAudio as any).name || 'reference.mp3');
+        const uploadRes = await fetch(`${base}/gradio_api/upload`, {
+          method: 'POST',
+          body: uploadFd,
+        });
+        if (!uploadRes.ok) continue;
+        const uploadJson = (await uploadRes.json()) as string[];
+        const refPath = uploadJson[0];
+
+        const pcmParts: Uint8Array[] = [];
+        let success = true;
+
+        for (let i = 0; i < textChunks.length; i++) {
+          const chunk = textChunks[i];
+          const callRes = await fetch(`${base}/gradio_api/call/generate_tts_audio`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              data: [
+                chunk,
+                { path: refPath, meta: { _type: 'gradio.FileData' } },
+                options.exaggeration ?? 0.48,
+                options.temperature ?? 0.65,
+                0,
+                0.5,
+                true,
+              ],
+            }),
+          });
+          if (!callRes.ok) { success = false; break; }
+          const { event_id } = (await callRes.json()) as { event_id: string };
+
+          const streamRes = await fetch(`${base}/gradio_api/call/generate_tts_audio/${event_id}`);
+          const streamText = await streamRes.text();
+          const match = streamText.match(/"url":\s*"([^"]+)"/);
+          if (!match || !match[1]) { success = false; break; }
+
+          const audioRes = await fetch(match[1]);
+          if (!audioRes.ok) { success = false; break; }
+          const audioBytes = new Uint8Array(await audioRes.arrayBuffer());
+          const pcm = extractPcmFromAudioBuffer(audioBytes);
+          pcmParts.push(pcm);
+
+          if (options.onProgress) {
+            options.onProgress(2 + Math.round(((i + 1) / textChunks.length) * 2), 4);
+          }
+        }
+
+        if (success && pcmParts.length > 0) {
+          const totalLength = pcmParts.reduce((acc, p) => acc + p.byteLength, 0);
+          const merged = new Uint8Array(totalLength);
+          let offset = 0;
+          for (const p of pcmParts) {
+            merged.set(p, offset);
+            offset += p.byteLength;
+          }
+          if (options.onProgress) options.onProgress(4, 4);
+          return pcmToWav(merged, 24000, 1);
+        }
+        continue;
+      }
+
+      // Cloudflare Worker proxy or local Chatterbox server
+      const pcmParts: Uint8Array[] = [];
+      let success = true;
+
+      for (let i = 0; i < textChunks.length; i++) {
+        const chunk = textChunks[i];
+        const fd = new FormData();
+        fd.append('reference_audio', referenceAudio, (referenceAudio as any).name || 'reference.mp3');
+        fd.append('text', chunk);
+        fd.append('speed', (options.speed ?? 1.0).toString());
+        fd.append('temperature', (options.temperature ?? 0.65).toString());
+        fd.append('exaggeration', (options.exaggeration ?? 0.48).toString());
+
+        const res = await fetch(`${base}/clone`, {
+          method: 'POST',
+          body: fd,
+        });
+
+        if (!res.ok) { success = false; break; }
+        const wavBlob = await res.blob();
+        const ab = await wavBlob.arrayBuffer();
+        const pcm = extractPcmFromAudioBuffer(new Uint8Array(ab));
+        pcmParts.push(pcm);
+
+        if (options.onProgress) {
+          options.onProgress(2 + Math.round(((i + 1) / textChunks.length) * 2), 4);
+        }
+      }
+
+      if (success && pcmParts.length > 0) {
+        const totalLength = pcmParts.reduce((acc, p) => acc + p.byteLength, 0);
+        const merged = new Uint8Array(totalLength);
+        let offset = 0;
+        for (const p of pcmParts) {
+          merged.set(p, offset);
+          offset += p.byteLength;
+        }
+        if (options.onProgress) options.onProgress(4, 4);
+        return pcmToWav(merged, 24000, 1);
+      }
+    } catch (err) {
+      console.warn(`[synthesizeWithChatterbox] Failed on endpoint ${base}:`, err);
+    }
+  }
+
+  return null;
+};
+
 export const cloneVoiceZeroShot = async (
   script: string,
   referenceAudioFile: File,
@@ -1915,7 +2052,23 @@ export const cloneVoiceZeroShot = async (
 
   const speedMultiplier = pacing === SpeechPacing.SLOW ? 0.85 : pacing === SpeechPacing.FAST ? 1.15 : 1.0;
 
-  // 1. Extract Acoustic Profile & Multimodal Vocal Fingerprint from Reference Audio
+  // 1. Chatterbox Neural Flow Matching Voice Cloning (Serverless Cloudflare & HF Cloud, zero local server required)
+  try {
+    const neuralBlob = await synthesizeWithChatterbox(referenceAudioFile, script, {
+      speed: speedMultiplier,
+      temperature: 0.65,
+      exaggeration: 0.48,
+      onProgress,
+    });
+    if (neuralBlob) {
+      return neuralBlob;
+    }
+  } catch (cbErr) {
+    console.warn('[cloneVoiceZeroShot] Neural Chatterbox pipeline error, executing Cloud-Native fallback:', cbErr);
+  }
+
+  // 2. Cloud-Native Fallback:
+  //    Combine Reference Multimodal Fingerprint + Matched Base Voice + SOLA Pitch-Matching Transfer
   const refAnalysis = await getReferenceVoiceAnalysis(referenceAudioFile);
   const { profile: acousticProfile, fingerprint } = refAnalysis;
 
@@ -1931,8 +2084,6 @@ export const cloneVoiceZeroShot = async (
 
   if (onProgress) onProgress(2, 4);
 
-  // Cloud-Native Zero-Shot Synthesis (100% in-browser & Cloudflare Pages)
-  // Combines Reference Multimodal Fingerprint + Matched Base Voice + SOLA Pitch-Matching Transfer
   const ai = getAI();
   const basePromptContext = buildPromptContext(emotion, dialect, baseVoice, pacing);
   const clonePromptContext = `${basePromptContext}
@@ -2038,6 +2189,25 @@ Respond ONLY with valid JSON (no markdown, no backticks):
 
   if (onProgress) onProgress(2, 3);
 
+  // 1. Chatterbox Neural Flow Matching Voice Conversion (Zero local server required)
+  try {
+    const neuralBlob = await synthesizeWithChatterbox(referenceAudioFile, transcript, {
+      speed,
+      temperature: 0.65,
+      exaggeration: 0.48,
+      onProgress: (cur, tot) => {
+        if (onProgress) onProgress(2 + Math.round((cur / tot) * 1), 3);
+      },
+    });
+    if (neuralBlob) {
+      if (onProgress) onProgress(3, 3);
+      return neuralBlob;
+    }
+  } catch (cbErr) {
+    console.warn('[convertVoiceToVoice] Neural Chatterbox pipeline error, executing Cloud-Native fallback:', cbErr);
+  }
+
+  // 2. Cloud-Native Acoustic Conversion Fallback:
   const ai = getAI();
   const vcContext = `VOICE-TO-VOICE CONVERSION DIRECTIVE:
 Re-perform the source script in the exact vocal identity of the target reference speaker:
