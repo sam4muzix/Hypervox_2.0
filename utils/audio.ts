@@ -514,30 +514,59 @@ export const cleanStudioVoicePcm = (
   const hpB0 = (1 + hpCos) / 2, hpB1 = -(1 + hpCos), hpB2 = (1 + hpCos) / 2;
   const hpA0 = 1 + hpAlpha, hpA1 = -2 * hpCos, hpA2 = 1 - hpAlpha;
 
-  let x1 = 0, x2 = 0, y1 = 0, y2 = 0;
+  let hx1 = 0, hx2 = 0, hy1 = 0, hy2 = 0;
   for (let i = 0; i < numSamples; i++) {
     const x0 = cleaned[i];
-    const y0 = (hpB0 / hpA0) * x0 + (hpB1 / hpA0) * x1 + (hpB2 / hpA0) * x2 - (hpA1 / hpA0) * y1 - (hpA2 / hpA0) * y2;
-    x2 = x1; x1 = x0; y2 = y1; y1 = y0;
+    const y0 = (hpB0 / hpA0) * x0 + (hpB1 / hpA0) * hx1 + (hpB2 / hpA0) * hx2 - (hpA1 / hpA0) * hy1 - (hpA2 / hpA0) * hy2;
+    hx2 = hx1; hx1 = x0; hy2 = hy1; hy1 = y0;
     cleaned[i] = y0;
   }
 
-  // Stage 4: Gentle High-Frequency Smoothing / Anti-Aliasing (9.5 kHz biquad lowpass)
+  // Stage 4: 4th-Order Butterworth Anti-Aliasing Lowpass (7500Hz)
+  // Eliminates high-frequency neural vocoder white noise hiss above 7.5 kHz while preserving crisp vocal clarity
   if (sampleRate >= 22050) {
-    const lpCutoff = Math.min(9500, sampleRate * 0.42);
-    const lpW0 = 2 * Math.PI * (lpCutoff / sampleRate);
-    const lpAlpha = Math.sin(lpW0) / (2 * 0.7071);
-    const lpCos = Math.cos(lpW0);
-    const lpB0 = (1 - lpCos) / 2, lpB1 = 1 - lpCos, lpB2 = (1 - lpCos) / 2;
-    const lpA0 = 1 + lpAlpha, lpA1 = -2 * lpCos, lpA2 = 1 - lpAlpha;
+    const applyBiquadLP = (cutoff: number, Q: number) => {
+      const f0 = cutoff / sampleRate;
+      const w0 = 2 * Math.PI * f0;
+      const alpha = Math.sin(w0) / (2 * Q);
+      const cosw0 = Math.cos(w0);
+      const b0 = (1 - cosw0) / 2, b1 = 1 - cosw0, b2 = (1 - cosw0) / 2;
+      const a0 = 1 + alpha, a1 = -2 * cosw0, a2 = 1 - alpha;
+      let x1 = 0, x2 = 0, y1 = 0, y2 = 0;
+      for (let i = 0; i < numSamples; i++) {
+        const x0 = cleaned[i];
+        const y0 = (b0 / a0) * x0 + (b1 / a0) * x1 + (b2 / a0) * x2 - (a1 / a0) * y1 - (a2 / a0) * y2;
+        x2 = x1; x1 = x0;
+        y2 = y1; y1 = y0;
+        cleaned[i] = y0;
+      }
+    };
+    // 4th order = cascade Q=0.5412 and Q=1.3065
+    applyBiquadLP(7500, 0.5412);
+    applyBiquadLP(7500, 1.3065);
+  }
 
-    let lx1 = 0, lx2 = 0, ly1 = 0, ly2 = 0;
-    for (let i = 0; i < numSamples; i++) {
-      const x0 = cleaned[i];
-      const y0 = (lpB0 / lpA0) * x0 + (lpB1 / lpA0) * x1 + (lpB2 / lpA0) * x2 - (lpA1 / lpA0) * ly1 - (lpA2 / lpA0) * ly2;
-      lx2 = lx1; lx1 = x0; ly2 = ly1; ly1 = y0;
-      cleaned[i] = y0;
+  // Stage 5: Studio Downward Expander / Adaptive Noise Gate
+  // Smoothly silences pauses between spoken phrases to eliminate background noise floor and white noise hiss
+  const attackCoeff = Math.exp(-1 / (sampleRate * 0.005));
+  const releaseCoeff = Math.exp(-1 / (sampleRate * 0.035));
+  const gateThreshold = 75; // RMS speech threshold
+  let envelope = 0;
+  let gateGain = 1.0;
+
+  for (let i = 0; i < numSamples; i++) {
+    const abs = Math.abs(cleaned[i]);
+    envelope = abs > envelope
+      ? attackCoeff * envelope + (1 - attackCoeff) * abs
+      : releaseCoeff * envelope + (1 - releaseCoeff) * abs;
+
+    let targetGain = 1.0;
+    if (envelope < gateThreshold) {
+      const ratio = envelope / gateThreshold;
+      targetGain = Math.pow(ratio, 1.8);
     }
+    gateGain = 0.92 * gateGain + 0.08 * targetGain;
+    cleaned[i] *= gateGain;
   }
 
   // Stage 5: Boundary 5ms Smooth Cosine Fade In & Fade Out
