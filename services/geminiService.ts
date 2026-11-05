@@ -904,7 +904,8 @@ export const resolveChatterboxEndpoint = async (): Promise<string | null> => {
   const candidates = Array.from(new Set([
     storedUrl ? storedUrl.replace(/\/$/, '') : '',
     envUrl ? envUrl.replace(/\/$/, '') : '',
-    CHATTERBOX_URL,
+    'http://127.0.0.1:5051',
+    'http://localhost:5051',
     '/api/chatterbox',
   ])).filter(Boolean);
 
