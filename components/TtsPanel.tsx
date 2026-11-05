@@ -8,13 +8,13 @@ import { VoiceCloningModal } from './VoiceCloningModal';
 import { WordPrecisionEditorModal } from './WordPrecisionEditorModal';
 
 const AVAILABLE_VOICES: VoiceOption[] = [
-  // ── Custom Cloned Voice (Chatterbox Neural Engine) ──
+  // ── Custom Cloned Voice (Voice Conversion Engine) ──
   { 
     id: 'custom_cloned_voice', 
     name: 'Custom Cloned Voice', 
     gender: VoiceGender.MALE, 
-    apiVoiceName: 'Chatterbox', 
-    persona: 'Authentic zero-shot neural voice cloning matching the vocal timbre, pitch, and resonance of your uploaded sample',
+    apiVoiceName: 'Voice Conversion', 
+    persona: 'Authentic zero-shot voice conversion matching the vocal timbre, pitch, and resonance of your uploaded sample',
     tag: 'My Voice Sample',
     category: 'Custom Voice'
   },
@@ -802,7 +802,7 @@ const TtsPanel: React.FC = () => {
       return;
     }
 
-    // Direct Text-to-Voice Cloning via Chatterbox if Custom Voice is selected
+    // Direct Text-to-Voice Conversion if Custom Voice is selected
     if (selectedVoice.id === 'custom_cloned_voice') {
       if (!referenceVoiceFile) {
         setError({ message: 'Please upload a reference audio sample for your Custom Voice first.' });
@@ -1562,11 +1562,11 @@ Tip: Use (Style) tags for per-sentence emotion delivery — e.g. (Shouting) Mass
                 </div>
                 <div>
                   <h4 className="text-white font-bold text-xs uppercase tracking-wider flex items-center gap-2">
-                    <span>Direct Voice-to-Voice & Voice Cloning Studio</span>
-                    <span className="text-[9px] px-1.5 py-0.5 rounded bg-purple-500/30 text-purple-300 font-mono font-bold">Popup Deck</span>
+                    <span>Direct Voice-to-Voice & Voice Conversion Studio</span>
+                    <span className="text-[9px] px-1.5 py-0.5 rounded bg-purple-500/30 text-purple-300 font-mono font-bold">Voice Conversion</span>
                   </h4>
                   <p className="text-[11px] text-gray-400 mt-0.5">
-                    {referenceVoiceFile ? `Active Sample: ${referenceVoiceFile.name}` : 'Transform spoken voice into target voice sample or clone script text'}
+                    {referenceVoiceFile ? `Active Sample: ${referenceVoiceFile.name}` : 'Transform spoken voice into target voice sample or convert script text'}
                   </p>
                 </div>
               </div>
@@ -1574,7 +1574,7 @@ Tip: Use (Style) tags for per-sentence emotion delivery — e.g. (Shouting) Mass
               <div className="flex items-center gap-2.5 flex-shrink-0">
                 {clonedAudioUrl && (
                   <span className="text-[10px] px-2 py-1 rounded bg-emerald-500/20 text-emerald-400 font-bold border border-emerald-500/30">
-                    ✓ Cloned Ready
+                    ✓ Converted Ready
                   </span>
                 )}
                 <button
@@ -1585,7 +1585,7 @@ Tip: Use (Style) tags for per-sentence emotion delivery — e.g. (Shouting) Mass
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 6H5.25A2.25 2.25 0 003 8.25v10.5A2.25 2.25 0 005.25 21h10.5A2.25 2.25 0 0018 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25" />
                   </svg>
-                  <span>Open Voice Cloning Window</span>
+                  <span>Open Voice Conversion Window</span>
                 </button>
               </div>
             </div>

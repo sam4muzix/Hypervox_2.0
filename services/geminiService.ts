@@ -1,6 +1,6 @@
 import { GoogleGenAI, GenerateContentResponse, Modality } from "@google/genai";
 import { Dialect, Emotion, VoiceOption, VoiceGender, TranscriptionStyle, DubbingGender, SpeechPacing, MultiSpeakerOptions, StorySegment } from '../types';
-import { decodeBase64ToUint8Array, extractPcmFromAudioBuffer, pcmToWav, blobToBase64, getAudioDurationFromFile, applyDspChorus, convertAudioFileTo24kMonoWav, applyAcousticTransfer, stretchPcmToTargetDuration } from '../utils/audio';
+import { decodeBase64ToUint8Array, extractPcmFromAudioBuffer, pcmToWav, blobToBase64, getAudioDurationFromFile, applyDspChorus, convertAudioFileTo24kMonoWav, applyAcousticTransfer, stretchPcmToTargetDuration, cleanStudioVoiceBlob, cleanStudioVoicePcm } from '../utils/audio';
 import { getAutoPronunciationGuidance, findRememberedDubbing, saveDownloadedDubbingProfile } from '../utils/memoryStore';
 
 // ─── Constants & Multi-Model / Multi-Key Rotation Pools ───────────────────────
@@ -1898,7 +1898,7 @@ Respond ONLY with a valid JSON object (no markdown, no backticks):
   return cached;
 };
 
-// ─── Neural Voice Conversion Engine (Chatterbox VC Zero-Shot Flow Matching) ───
+// ─── Neural Voice Conversion Engine (Voice Conversion Zero-Shot Flow Matching) ───
 export const convertWithChatterboxVC = async (
   sourceAudio: Blob | File,
   referenceAudio: Blob | File,
@@ -1976,12 +1976,14 @@ export const convertWithChatterboxVC = async (
         if (!audioUrl) continue;
         const audioRes = await fetch(audioUrl);
         if (!audioRes.ok) continue;
-        const blob = await audioRes.blob();
+        const rawBlob = await audioRes.blob();
+        // Clean audio through studio de-clicker, rumble filter & limiter
+        const studioBlob = await cleanStudioVoiceBlob(rawBlob);
         if (onProgress) onProgress(3, 3);
-        return blob;
+        return studioBlob;
       }
 
-      // Standard /vc endpoint (Cloudflare Worker proxy or local server)
+      // Standard /vc endpoint (Cloudflare Worker proxy or server)
       const fd = new FormData();
       fd.append('source_audio', sourceAudio, (sourceAudio as any).name || 'source.wav');
       fd.append('reference_audio', referenceAudio, (referenceAudio as any).name || 'reference.mp3');
@@ -1992,11 +1994,13 @@ export const convertWithChatterboxVC = async (
       });
 
       if (res.ok) {
+        const rawBlob = await res.blob();
+        const studioBlob = await cleanStudioVoiceBlob(rawBlob);
         if (onProgress) onProgress(3, 3);
-        return await res.blob();
+        return studioBlob;
       }
     } catch (err) {
-      console.warn(`[convertWithChatterboxVC] Failed on endpoint ${base}:`, err);
+      console.warn(`[convertVoiceConversion] Failed on endpoint ${base}:`, err);
     }
   }
 
@@ -2056,7 +2060,7 @@ export const cloneVoiceZeroShot = async (
     console.warn('[cloneVoiceZeroShot] Source spot generation fallback:', spotErr);
   }
 
-  // 2. Perform Chatterbox Voice Conversion using Reference Voice Sample
+  // 2. Perform Voice Conversion using Reference Voice Sample
   if (sourceBlob) {
     if (onProgress) onProgress(2, 4);
     try {
@@ -2064,11 +2068,12 @@ export const cloneVoiceZeroShot = async (
         if (onProgress) onProgress(2 + Math.round((step / tot) * 2), 4);
       });
       if (vcBlob) {
+        const studioBlob = await cleanStudioVoiceBlob(vcBlob);
         if (onProgress) onProgress(4, 4);
-        return vcBlob;
+        return studioBlob;
       }
     } catch (cbErr) {
-      console.warn('[cloneVoiceZeroShot] Chatterbox VC conversion failed, using acoustic fallback:', cbErr);
+      console.warn('[cloneVoiceZeroShot] Voice conversion failed, using acoustic fallback:', cbErr);
     }
   }
 
@@ -2121,15 +2126,16 @@ export const convertVoiceToVoice = async (
 ): Promise<Blob> => {
   if (onProgress) onProgress(1, 3);
 
-  // 1. Chatterbox Neural Voice Conversion (Direct Source -> Target Timbre Flow Matching)
+  // 1. Neural Voice Conversion (Direct Source -> Target Timbre Flow Matching)
   try {
     const vcBlob = await convertWithChatterboxVC(sourceAudioBlobOrFile, referenceAudioFile, onProgress);
     if (vcBlob) {
+      const studioBlob = await cleanStudioVoiceBlob(vcBlob);
       if (onProgress) onProgress(3, 3);
-      return vcBlob;
+      return studioBlob;
     }
   } catch (vcErr) {
-    console.warn('[convertVoiceToVoice] Chatterbox VC conversion failed, using acoustic fallback:', vcErr);
+    console.warn('[convertVoiceToVoice] Voice conversion failed, using acoustic fallback:', vcErr);
   }
 
   // 2. Cloud-Native Voice-to-Voice Conversion Fallback:

@@ -108,10 +108,10 @@ export const VoiceCloningModal: React.FC<VoiceCloningModalProps> = ({
             <div>
               <div className="flex items-center gap-2">
                 <h3 className="text-white font-bold text-base tracking-wide">
-                  Chatterbox Voice Conversion Studio
+                  Voice Conversion Studio
                 </h3>
                 <span className="text-[10px] px-2 py-0.5 rounded bg-purple-500/30 text-purple-300 font-mono font-bold">
-                  Zero-Shot Neural Flow
+                  Zero-Shot Voice Conversion
                 </span>
               </div>
               <p className="text-xs text-gray-400 mt-0.5">
@@ -290,9 +290,9 @@ export const VoiceCloningModal: React.FC<VoiceCloningModalProps> = ({
             <div className="flex items-center gap-2">
               <span className="w-2 h-2 rounded-full bg-emerald-400 shadow-[0_0_8px_#34d399] animate-pulse" />
               <span className="text-gray-300">Neural Engine:</span>
-              <span className="text-purple-300 font-bold">Chatterbox Neural VC Flow (Zero-Shot)</span>
+              <span className="text-purple-300 font-bold">Voice Conversion Neural Flow (Zero-Shot)</span>
             </div>
-            <span className="text-emerald-400/90 text-[10px] font-semibold">Clean 3s–6s Target Sample</span>
+            <span className="text-emerald-400/90 text-[10px] font-semibold">Studio Clean 3s–6s Target Sample</span>
           </div>
 
           {/* Action Buttons */}
@@ -350,7 +350,7 @@ export const VoiceCloningModal: React.FC<VoiceCloningModalProps> = ({
           {(isCloning || isConvertingVc) && cloneProgress.total > 0 && (
             <div className="space-y-1.5 pt-1">
               <div className="flex items-center justify-between text-[11px] font-mono text-purple-300">
-                <span>{isCloning ? 'Generating Script & Timbre Transfer...' : 'Running Chatterbox VC Neural Flow...'}</span>
+                <span>{isCloning ? 'Generating Script & Timbre Transfer...' : 'Running Voice Conversion Flow...'}</span>
                 <span>{cloneProgress.current}/{cloneProgress.total}</span>
               </div>
               <div className="w-full bg-black/60 rounded-full h-1.5 overflow-hidden border border-purple-500/20">
