@@ -102,6 +102,13 @@ const App: React.FC = () => {
     return stopWatcher;
   }, []);
 
+  // Ensure Hypervox always displays from the top of the screen
+  useEffect(() => {
+    window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
+    document.documentElement.scrollTop = 0;
+    document.body.scrollTop = 0;
+  }, [showIntro, activeTab]);
+
   // 1. Cosmic Intro Screen first; clicking Enter triggers Master Password Verification if not verified within 24h
   if (showIntro || !currentUser || !currentUser.passwordVerified) {
     return (
@@ -116,6 +123,9 @@ const App: React.FC = () => {
           isMusicPlaying={isMusicPlaying}
           onToggleMusic={toggleMusic}
           onEnter={() => {
+            window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
+            document.documentElement.scrollTop = 0;
+            document.body.scrollTop = 0;
             startMusic();
             const activeUser = getCurrentUser();
             if (activeUser && activeUser.passwordVerified) {
@@ -130,6 +140,9 @@ const App: React.FC = () => {
           isOpen={showOtpModal}
           onClose={() => setShowOtpModal(false)}
           onSuccess={(user) => {
+            window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
+            document.documentElement.scrollTop = 0;
+            document.body.scrollTop = 0;
             setCurrentUser(user);
             setShowOtpModal(false);
             setShowIntro(false);
