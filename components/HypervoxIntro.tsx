@@ -184,18 +184,14 @@ const HypervoxIntro: React.FC<HypervoxIntroProps> = ({ onEnter }) => {
           HyperVox
         </h1>
 
-        {/* Studio byline */}
-        <p
-          className="intro-sub text-emerald-400/70 uppercase mb-2 select-none"
-          style={{
-            fontFamily: "'JetBrains Mono', monospace",
-            fontWeight: 600,
-            fontSize: 'clamp(0.6rem, 1.4vw, 0.8rem)',
-            letterSpacing: '0.48em',
-          }}
-        >
-          by Greenmix Labs
-        </p>
+        {/* Studio byline with Official Brand Logo */}
+        <div className="intro-sub flex items-center justify-center gap-2 mb-4 select-none">
+          <img
+            src="/brand-logo.png"
+            alt="Greenmix Labs"
+            className="h-7 sm:h-9 w-auto object-contain drop-shadow-[0_0_15px_rgba(16,185,129,0.4)]"
+          />
+        </div>
 
         {/* Tagline */}
         <p
