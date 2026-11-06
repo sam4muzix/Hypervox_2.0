@@ -1077,11 +1077,11 @@ const TtsPanel: React.FC = () => {
                             </button>
 
                             {/* Floating Hover Emotion Intensity Control Slider */}
-                            <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-48 p-2.5 rounded-xl bg-neutral-900/95 border border-emerald-500/40 shadow-2xl backdrop-blur-md opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto transition-all duration-200 z-50 flex flex-col gap-2">
-                              <div className="flex items-center justify-between text-[10px]">
-                                <span className="text-gray-300 font-bold truncate flex items-center gap-1">
+                            <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 w-52 p-3 rounded-xl bg-neutral-900 border border-emerald-500/50 shadow-2xl backdrop-blur-md opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto transition-all duration-150 z-[100] flex flex-col gap-2 before:content-[''] before:absolute before:-bottom-3 before:left-0 before:w-full before:h-4">
+                              <div className="flex items-center justify-between text-[11px]">
+                                <span className="text-gray-200 font-bold truncate flex items-center gap-1">
                                   <span>{label}</span>
-                                  <span className="text-gray-500 font-normal">Intensity</span>
+                                  <span className="text-gray-400 font-normal">Intensity</span>
                                 </span>
                                 <span className="text-emerald-400 font-mono font-bold">{currentIntensity}%</span>
                               </div>
@@ -1107,10 +1107,10 @@ const TtsPanel: React.FC = () => {
                                     handleIntensityChange(vibe, 20);
                                   }}
                                   className={`px-2 py-0.5 rounded transition-colors cursor-pointer ${
-                                    currentIntensity <= 30 ? 'bg-emerald-500/30 text-emerald-300 font-bold' : 'bg-black/40 hover:bg-white/10 text-gray-400 hover:text-white'
+                                    currentIntensity <= 30 ? 'bg-emerald-500/30 text-emerald-300 font-bold border border-emerald-500/40' : 'bg-black/40 hover:bg-white/10 text-gray-400 hover:text-white'
                                   }`}
                                 >
-                                  Min
+                                  Min (20%)
                                 </button>
                                 <button
                                   type="button"
@@ -1119,10 +1119,10 @@ const TtsPanel: React.FC = () => {
                                     handleIntensityChange(vibe, 60);
                                   }}
                                   className={`px-2 py-0.5 rounded transition-colors cursor-pointer ${
-                                    currentIntensity > 30 && currentIntensity < 85 ? 'bg-emerald-500/30 text-emerald-300 font-bold' : 'bg-black/40 hover:bg-white/10 text-gray-400 hover:text-white'
+                                    currentIntensity > 30 && currentIntensity < 85 ? 'bg-emerald-500/30 text-emerald-300 font-bold border border-emerald-500/40' : 'bg-black/40 hover:bg-white/10 text-gray-400 hover:text-white'
                                   }`}
                                 >
-                                  Mid
+                                  Mid (60%)
                                 </button>
                                 <button
                                   type="button"
@@ -1131,15 +1131,15 @@ const TtsPanel: React.FC = () => {
                                     handleIntensityChange(vibe, 100);
                                   }}
                                   className={`px-2 py-0.5 rounded transition-colors cursor-pointer ${
-                                    currentIntensity >= 85 ? 'bg-emerald-500/30 text-emerald-300 font-bold' : 'bg-black/40 hover:bg-white/10 text-gray-400 hover:text-white'
+                                    currentIntensity >= 85 ? 'bg-emerald-500/30 text-emerald-300 font-bold border border-emerald-500/40' : 'bg-black/40 hover:bg-white/10 text-gray-400 hover:text-white'
                                   }`}
                                 >
-                                  Max
+                                  Max (100%)
                                 </button>
                               </div>
 
                               {/* Pointer Arrow */}
-                              <div className="absolute top-full left-1/2 -translate-x-1/2 -mt-[1px] border-4 border-transparent border-t-neutral-900/95" />
+                              <div className="absolute top-full left-1/2 -translate-x-1/2 -mt-[1px] border-4 border-transparent border-t-neutral-900" />
                             </div>
                           </div>
                         );
@@ -1147,6 +1147,68 @@ const TtsPanel: React.FC = () => {
                     </div>
                   </div>
                 ))}
+
+                {/* Dedicated Active Emotion Intensity Control (Always visible & interactive) */}
+                <div className="mt-3 p-3 bg-neutral-900/80 border border-emerald-500/30 rounded-xl space-y-2 shadow-inner">
+                  <div className="flex items-center justify-between text-xs">
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      <span className="text-emerald-400 flex-shrink-0">{EMOTION_ICONS[emotion]}</span>
+                      <span className="font-semibold text-white truncate">
+                        {VIBE_CATEGORIES.flatMap(c => c.items).find(i => i.vibe === emotion)?.label || emotion} Intensity
+                      </span>
+                    </div>
+                    <span className="text-emerald-400 font-mono font-bold text-xs bg-emerald-500/20 px-2 py-0.5 rounded border border-emerald-500/30">
+                      {emotionIntensities[emotion] ?? 80}%
+                    </span>
+                  </div>
+                  <input
+                    type="range"
+                    min="10"
+                    max="100"
+                    step="5"
+                    value={emotionIntensities[emotion] ?? 80}
+                    onChange={(e) => handleIntensityChange(emotion, Number(e.target.value))}
+                    className="w-full accent-emerald-400 h-1.5 bg-neutral-700 rounded-lg cursor-pointer"
+                  />
+                  <div className="flex items-center justify-between text-[10px]">
+                    <span className="text-gray-400 text-[10px]">Acting Strength:</span>
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => handleIntensityChange(emotion, 20)}
+                        className={`px-2 py-0.5 rounded transition-all cursor-pointer ${
+                          (emotionIntensities[emotion] ?? 80) <= 30
+                            ? 'bg-emerald-500/30 text-emerald-300 font-bold border border-emerald-500/50'
+                            : 'bg-black/40 hover:bg-white/10 text-gray-400 hover:text-white border border-white/5'
+                        }`}
+                      >
+                        Min (20%)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleIntensityChange(emotion, 60)}
+                        className={`px-2 py-0.5 rounded transition-all cursor-pointer ${
+                          (emotionIntensities[emotion] ?? 80) > 30 && (emotionIntensities[emotion] ?? 80) < 85
+                            ? 'bg-emerald-500/30 text-emerald-300 font-bold border border-emerald-500/50'
+                            : 'bg-black/40 hover:bg-white/10 text-gray-400 hover:text-white border border-white/5'
+                        }`}
+                      >
+                        Mid (60%)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleIntensityChange(emotion, 100)}
+                        className={`px-2 py-0.5 rounded transition-all cursor-pointer ${
+                          (emotionIntensities[emotion] ?? 80) >= 85
+                            ? 'bg-emerald-500/30 text-emerald-300 font-bold border border-emerald-500/50'
+                            : 'bg-black/40 hover:bg-white/10 text-gray-400 hover:text-white border border-white/5'
+                        }`}
+                      >
+                        Max (100%)
+                      </button>
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
 
