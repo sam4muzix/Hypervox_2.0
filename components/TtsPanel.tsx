@@ -529,6 +529,7 @@ const TtsPanel: React.FC = () => {
   const [selectedVoice, setSelectedVoice] = useState<VoiceOption>(AVAILABLE_VOICES[0]);
   const [voiceFilter, setVoiceFilter] = useState<string>('ALL');
   const [emotion, setEmotion] = useState<Emotion>(Emotion.NEUTRAL);
+  const [expandedIntensity, setExpandedIntensity] = useState<Emotion | null>(null);
   const [emotionIntensities, setEmotionIntensities] = useState<Record<string, number>>(() => {
     const initial: Record<string, number> = {};
     Object.values(Emotion).forEach((e) => {
@@ -1062,162 +1063,96 @@ const TtsPanel: React.FC = () => {
                       {cat.items.map(({ vibe, label }) => {
                         const isSelected = emotion === vibe;
                         const currentIntensity = emotionIntensities[vibe] ?? 80;
+                        const isExpanded = expandedIntensity === vibe;
                         return (
-                          <div key={vibe} className="relative group">
-                            <button
-                              type="button"
-                              onClick={() => setEmotion(vibe)}
-                              title={`${vibe} (Intensity: ${currentIntensity}%)`}
-                              className={`w-full px-2 py-1.5 rounded-lg border text-left transition-all flex items-center justify-between gap-1 select-none text-xs cursor-pointer ${
-                                isSelected
-                                  ? 'bg-emerald-500/20 border-emerald-500 text-emerald-400 font-bold shadow-sm'
-                                  : 'bg-black/30 border-white/5 text-gray-400 hover:border-white/20 hover:text-white'
-                              }`}
-                            >
-                              <div className="flex items-center gap-1.5 min-w-0">
-                                <span className="flex-shrink-0">{EMOTION_ICONS[vibe]}</span>
-                                <span className="truncate">{label}</span>
-                              </div>
-                              <span className={`text-[9px] font-mono px-1 py-0.2 rounded transition-colors ${
-                                isSelected ? 'bg-emerald-500/30 text-emerald-300 font-bold' : 'text-gray-500 group-hover:text-emerald-400'
-                              }`}>
-                                {currentIntensity}%
-                              </span>
-                            </button>
-
-                            {/* Floating Hover Emotion Intensity Control Slider */}
-                            <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 w-52 p-3 rounded-xl bg-neutral-900 border border-emerald-500/50 shadow-2xl backdrop-blur-md opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto transition-all duration-150 z-[100] flex flex-col gap-2 before:content-[''] before:absolute before:-bottom-3 before:left-0 before:w-full before:h-4">
-                              <div className="flex items-center justify-between text-[11px]">
-                                <span className="text-gray-200 font-bold truncate flex items-center gap-1">
-                                  <span>{label}</span>
-                                  <span className="text-gray-400 font-normal">Intensity</span>
-                                </span>
-                                <span className="text-emerald-400 font-mono font-bold">{currentIntensity}%</span>
-                              </div>
-                              
-                              <input
-                                type="range"
-                                min="10"
-                                max="100"
-                                step="5"
-                                value={currentIntensity}
-                                onChange={(e) => {
+                          <div key={vibe}>
+                            <div className="flex items-center gap-0.5">
+                              {/* Arrow toggle button */}
+                              <button
+                                type="button"
+                                onClick={(e) => {
                                   e.stopPropagation();
-                                  handleIntensityChange(vibe, Number(e.target.value));
+                                  setExpandedIntensity(isExpanded ? null : vibe);
                                 }}
-                                className="w-full accent-emerald-400 h-1.5 bg-neutral-700 rounded-lg cursor-pointer"
-                              />
-
-                              <div className="flex items-center justify-between text-[9px] text-gray-400">
-                                <button
-                                  type="button"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    handleIntensityChange(vibe, 20);
-                                  }}
-                                  className={`px-2 py-0.5 rounded transition-colors cursor-pointer ${
-                                    currentIntensity <= 30 ? 'bg-emerald-500/30 text-emerald-300 font-bold border border-emerald-500/40' : 'bg-black/40 hover:bg-white/10 text-gray-400 hover:text-white'
-                                  }`}
-                                >
-                                  Min (20%)
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    handleIntensityChange(vibe, 60);
-                                  }}
-                                  className={`px-2 py-0.5 rounded transition-colors cursor-pointer ${
-                                    currentIntensity > 30 && currentIntensity < 85 ? 'bg-emerald-500/30 text-emerald-300 font-bold border border-emerald-500/40' : 'bg-black/40 hover:bg-white/10 text-gray-400 hover:text-white'
-                                  }`}
-                                >
-                                  Mid (60%)
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    handleIntensityChange(vibe, 100);
-                                  }}
-                                  className={`px-2 py-0.5 rounded transition-colors cursor-pointer ${
-                                    currentIntensity >= 85 ? 'bg-emerald-500/30 text-emerald-300 font-bold border border-emerald-500/40' : 'bg-black/40 hover:bg-white/10 text-gray-400 hover:text-white'
-                                  }`}
-                                >
-                                  Max (100%)
-                                </button>
-                              </div>
-
-                              {/* Pointer Arrow */}
-                              <div className="absolute top-full left-1/2 -translate-x-1/2 -mt-[1px] border-4 border-transparent border-t-neutral-900" />
+                                title="Adjust intensity"
+                                className={`flex-shrink-0 w-5 h-full min-h-[2rem] rounded-l-lg border flex items-center justify-center transition-all cursor-pointer ${
+                                  isExpanded
+                                    ? 'bg-emerald-500/30 border-emerald-500 text-emerald-400'
+                                    : 'bg-black/30 border-white/5 text-gray-500 hover:border-emerald-500/50 hover:text-emerald-400'
+                                }`}
+                              >
+                                <svg width="8" height="8" viewBox="0 0 8 8" fill="currentColor">
+                                  {isExpanded
+                                    ? <path d="M4 2L7 6H1L4 2Z"/>
+                                    : <path d="M4 6L1 2H7L4 6Z"/>
+                                  }
+                                </svg>
+                              </button>
+                              {/* Emotion button */}
+                              <button
+                                type="button"
+                                onClick={() => setEmotion(vibe)}
+                                title={`${vibe} (Intensity: ${currentIntensity}%)`}
+                                className={`flex-1 px-2 py-1.5 rounded-r-lg border text-left transition-all flex items-center justify-between gap-1 select-none text-xs cursor-pointer ${
+                                  isSelected
+                                    ? 'bg-emerald-500/20 border-emerald-500 text-emerald-400 font-bold shadow-sm'
+                                    : 'bg-black/30 border-white/5 text-gray-400 hover:border-white/20 hover:text-white'
+                                }`}
+                              >
+                                <div className="flex items-center gap-1.5 min-w-0">
+                                  <span className="flex-shrink-0">{EMOTION_ICONS[vibe]}</span>
+                                  <span className="truncate">{label}</span>
+                                </div>
+                                <span className={`text-[9px] font-mono px-1 rounded transition-colors ${
+                                  isSelected ? 'bg-emerald-500/30 text-emerald-300 font-bold' : 'text-gray-500'
+                                }`}>
+                                  {currentIntensity}%
+                                </span>
+                              </button>
                             </div>
+                            {/* Expandable inline slider */}
+                            {isExpanded && (
+                              <div className="mt-1 p-2 rounded-lg bg-neutral-900 border border-emerald-500/40 shadow-lg flex flex-col gap-1.5">
+                                <div className="flex items-center justify-between text-[10px]">
+                                  <span className="text-gray-300 font-semibold">{label} Intensity</span>
+                                  <span className="text-emerald-400 font-mono font-bold">{currentIntensity}%</span>
+                                </div>
+                                <input
+                                  type="range"
+                                  min="10"
+                                  max="100"
+                                  step="5"
+                                  value={currentIntensity}
+                                  onChange={(e) => {
+                                    e.stopPropagation();
+                                    handleIntensityChange(vibe, Number(e.target.value));
+                                  }}
+                                  className="w-full accent-emerald-400 h-1.5 bg-neutral-700 rounded-lg cursor-pointer"
+                                />
+                                <div className="flex items-center justify-between gap-1">
+                                  {([['Min', 20], ['Mid', 60], ['Max', 100]] as [string, number][]).map(([lbl, val]) => (
+                                    <button
+                                      key={lbl}
+                                      type="button"
+                                      onClick={(e) => { e.stopPropagation(); handleIntensityChange(vibe, val); }}
+                                      className={`flex-1 py-0.5 rounded text-[9px] transition-colors cursor-pointer ${
+                                        (lbl === 'Min' && currentIntensity <= 30) || (lbl === 'Mid' && currentIntensity > 30 && currentIntensity < 85) || (lbl === 'Max' && currentIntensity >= 85)
+                                          ? 'bg-emerald-500/30 text-emerald-300 font-bold border border-emerald-500/40'
+                                          : 'bg-black/40 hover:bg-white/10 text-gray-400 hover:text-white border border-white/5'
+                                      }`}
+                                    >
+                                      {lbl}
+                                    </button>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
                           </div>
                         );
                       })}
                     </div>
                   </div>
                 ))}
-
-                {/* Dedicated Active Emotion Intensity Control (Always visible & interactive) */}
-                <div className="mt-3 p-3 bg-neutral-900/80 border border-emerald-500/30 rounded-xl space-y-2 shadow-inner">
-                  <div className="flex items-center justify-between text-xs">
-                    <div className="flex items-center gap-1.5 min-w-0">
-                      <span className="text-emerald-400 flex-shrink-0">{EMOTION_ICONS[emotion]}</span>
-                      <span className="font-semibold text-white truncate">
-                        {VIBE_CATEGORIES.flatMap(c => c.items).find(i => i.vibe === emotion)?.label || emotion} Intensity
-                      </span>
-                    </div>
-                    <span className="text-emerald-400 font-mono font-bold text-xs bg-emerald-500/20 px-2 py-0.5 rounded border border-emerald-500/30">
-                      {emotionIntensities[emotion] ?? 80}%
-                    </span>
-                  </div>
-                  <input
-                    type="range"
-                    min="10"
-                    max="100"
-                    step="5"
-                    value={emotionIntensities[emotion] ?? 80}
-                    onChange={(e) => handleIntensityChange(emotion, Number(e.target.value))}
-                    className="w-full accent-emerald-400 h-1.5 bg-neutral-700 rounded-lg cursor-pointer"
-                  />
-                  <div className="flex items-center justify-between text-[10px]">
-                    <span className="text-gray-400 text-[10px]">Acting Strength:</span>
-                    <div className="flex items-center gap-1.5">
-                      <button
-                        type="button"
-                        onClick={() => handleIntensityChange(emotion, 20)}
-                        className={`px-2 py-0.5 rounded transition-all cursor-pointer ${
-                          (emotionIntensities[emotion] ?? 80) <= 30
-                            ? 'bg-emerald-500/30 text-emerald-300 font-bold border border-emerald-500/50'
-                            : 'bg-black/40 hover:bg-white/10 text-gray-400 hover:text-white border border-white/5'
-                        }`}
-                      >
-                        Min (20%)
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleIntensityChange(emotion, 60)}
-                        className={`px-2 py-0.5 rounded transition-all cursor-pointer ${
-                          (emotionIntensities[emotion] ?? 80) > 30 && (emotionIntensities[emotion] ?? 80) < 85
-                            ? 'bg-emerald-500/30 text-emerald-300 font-bold border border-emerald-500/50'
-                            : 'bg-black/40 hover:bg-white/10 text-gray-400 hover:text-white border border-white/5'
-                        }`}
-                      >
-                        Mid (60%)
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleIntensityChange(emotion, 100)}
-                        className={`px-2 py-0.5 rounded transition-all cursor-pointer ${
-                          (emotionIntensities[emotion] ?? 80) >= 85
-                            ? 'bg-emerald-500/30 text-emerald-300 font-bold border border-emerald-500/50'
-                            : 'bg-black/40 hover:bg-white/10 text-gray-400 hover:text-white border border-white/5'
-                        }`}
-                      >
-                        Max (100%)
-                      </button>
-                    </div>
-                  </div>
-                </div>
               </div>
             </div>
 
