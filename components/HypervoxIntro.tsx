@@ -2,11 +2,9 @@ import React, { useEffect, useRef } from 'react';
 
 interface HypervoxIntroProps {
   onEnter: () => void;
-  isMusicPlaying?: boolean;
-  onToggleMusic?: () => void;
 }
 
-const HypervoxIntro: React.FC<HypervoxIntroProps> = ({ onEnter, isMusicPlaying = false, onToggleMusic }) => {
+const HypervoxIntro: React.FC<HypervoxIntroProps> = ({ onEnter }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const animRef = useRef<number>(0);
 
@@ -168,39 +166,6 @@ const HypervoxIntro: React.FC<HypervoxIntroProps> = ({ onEnter, isMusicPlaying =
 
       {/* Cosmic canvas background */}
       <canvas ref={canvasRef} className="absolute inset-0 w-full h-full" style={{ zIndex: 0 }} />
-
-      {/* Top Right Music Toggle */}
-      {onToggleMusic && (
-        <div className="absolute top-6 right-8 z-30">
-          <button
-            onClick={onToggleMusic}
-            title={isMusicPlaying ? 'Turn Music Off' : 'Turn Music On'}
-            className="flex items-center gap-2 px-3.5 py-1.5 rounded-full border border-emerald-500/40 bg-black/60 backdrop-blur-md font-mono text-[11px] tracking-wider transition-all hover:border-emerald-400 cursor-pointer"
-            style={{
-              color: isMusicPlaying ? '#34d399' : '#9ca3af',
-              boxShadow: isMusicPlaying ? '0 0 15px rgba(16,185,129,0.3)' : 'none',
-            }}
-          >
-            {isMusicPlaying ? (
-              <>
-                <span className="flex items-end gap-0.5 h-3">
-                  <span className="w-0.5 bg-emerald-400 h-3 animate-pulse" />
-                  <span className="w-0.5 bg-emerald-400 h-1.5 animate-pulse" />
-                  <span className="w-0.5 bg-emerald-400 h-2.5 animate-pulse" />
-                </span>
-                <span>MUSIC ON</span>
-              </>
-            ) : (
-              <>
-                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M17.25 9.75L19.5 12m0 0l2.25 2.25M19.5 12l2.25-2.25M19.5 12l-2.25 2.25m-10.5-6l4.72-4.72a.75.75 0 011.28.53v15.88a.75.75 0 01-1.28.53l-4.72-4.72H4.51c-.88 0-1.704-.507-1.938-1.354A9.01 9.01 0 012.25 12c0-.83.112-1.633.322-2.396C2.806 8.757 3.63 8.25 4.51 8.25H6.75z" />
-                </svg>
-                <span>MUSIC OFF</span>
-              </>
-            )}
-          </button>
-        </div>
-      )}
 
       {/* Centered content */}
       <div className="relative z-10 flex flex-col items-center text-center px-6">
