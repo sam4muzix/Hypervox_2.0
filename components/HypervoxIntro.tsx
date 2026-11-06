@@ -2,9 +2,10 @@ import React, { useEffect, useRef } from 'react';
 
 interface HypervoxIntroProps {
   onEnter: () => void;
+  onBackToLabs?: () => void;
 }
 
-const HypervoxIntro: React.FC<HypervoxIntroProps> = ({ onEnter }) => {
+const HypervoxIntro: React.FC<HypervoxIntroProps> = ({ onEnter, onBackToLabs }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const animRef = useRef<number>(0);
 
@@ -185,13 +186,24 @@ const HypervoxIntro: React.FC<HypervoxIntroProps> = ({ onEnter }) => {
         </h1>
 
         {/* Studio byline with Official Brand Logo */}
-        <div className="intro-sub flex items-center justify-center gap-2 mb-4 select-none">
+        <button
+          type="button"
+          onClick={() => {
+            if (onBackToLabs) {
+              onBackToLabs();
+            } else {
+              window.location.href = '/';
+            }
+          }}
+          className="intro-sub flex items-center justify-center gap-2 mb-4 select-none cursor-pointer hover:opacity-80 transition-opacity bg-transparent border-0 p-0 focus:outline-none"
+          title="Return to Greenmix Labs Home"
+        >
           <img
             src="/brand-logo.png"
             alt="Greenmix Labs"
             className="h-7 sm:h-9 w-auto object-contain drop-shadow-[0_0_15px_rgba(16,185,129,0.4)]"
           />
-        </div>
+        </button>
 
         {/* Tagline */}
         <p
