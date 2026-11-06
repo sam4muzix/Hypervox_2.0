@@ -564,6 +564,18 @@ const EMOTION_AUDIO_TAGS: Record<string, string> = {
   [Emotion.JEWELLERY_ELEGANT]: '[softly, warmly and with regal elegance]',
 };
 
+export const getEmotionAudioTag = (emotion: Emotion, intensity: number = 80): string => {
+  const base = EMOTION_AUDIO_TAGS[emotion] || `[${emotion}]`;
+  const clean = base.replace(/^\[|\]$/g, '');
+  if (intensity <= 30) {
+    return `[subtly, mild ${clean}]`;
+  }
+  if (intensity >= 85) {
+    return `[at maximum intensity, ${clean}]`;
+  }
+  return `[${clean}]`;
+};
+
 // ─── Per-voice persona overrides ──────────────────────────────────────────────
 /**
  * Natural per-voice delivery instructions calibrated for realistic human diction.
@@ -789,7 +801,8 @@ const buildPromptContext = (
   dialect: Dialect,
   voice: VoiceOption,
   pacing: SpeechPacing = SpeechPacing.MEDIUM,
-  pronunciationGuide?: string
+  pronunciationGuide?: string,
+  emotionIntensity: number = 80
 ): string => {
   const dialectMap: Record<string, string> = {
     [Dialect.CHENNAI_TAMIL]:   'Chennai Tamil colloquial accent',
@@ -817,7 +830,16 @@ const buildPromptContext = (
   const dialectStyle = dialectMap[dialect] ?? String(dialect);
   const voicePersonaOverride = VOICE_PERSONA_OVERRIDES[voice.id] ?? `Voice: ${voice.persona}`;
 
-  let context = `${emotionInstruction} Pacing: ${pacing}. Dialect: ${dialectStyle}. ${voicePersonaOverride}. ${EMOTION_EXPRESSION_DIRECTIVE}`;
+  let intensityDirective = '';
+  if (emotionIntensity <= 30) {
+    intensityDirective = `EMOTION INTENSITY: SUBTLE / MIN (${emotionIntensity}%). Deliver with gentle restraint, understated nuance, and mild tonal presence.`;
+  } else if (emotionIntensity >= 85) {
+    intensityDirective = `EMOTION INTENSITY: MAXIMUM / PEAK (${emotionIntensity}%). Deliver with full-throttle commitment, powerful dynamic projection, and deep emotional intensity.`;
+  } else {
+    intensityDirective = `EMOTION INTENSITY: MODERATE (${emotionIntensity}%). Deliver with balanced expression and distinct emotional character.`;
+  }
+
+  let context = `${emotionInstruction} ${intensityDirective} Pacing: ${pacing}. Dialect: ${dialectStyle}. ${voicePersonaOverride}. ${EMOTION_EXPRESSION_DIRECTIVE}`;
   if (pronunciationGuide && pronunciationGuide.trim()) {
     context += ` Pronunciation Guide: ${pronunciationGuide.trim()}.`;
   }
@@ -832,7 +854,8 @@ const buildDialoguePromptContext = (
   pacing: SpeechPacing = SpeechPacing.MEDIUM,
   pronunciationGuide?: string,
   femaleVoiceLabel: string = 'Aoede',
-  maleVoiceLabel: string = 'Fenrir'
+  maleVoiceLabel: string = 'Fenrir',
+  emotionIntensity: number = 80
 ): string => {
   const dialectMap: Record<string, string> = {
     [Dialect.CHENNAI_TAMIL]:   'Chennai Tamil colloquial accent',
@@ -850,7 +873,16 @@ const buildDialoguePromptContext = (
   const emotionInstruction = EMOTION_SYSTEM_INSTRUCTIONS[emotion] ?? `Style: ${emotion}`;
   const dialectStyle = dialectMap[dialect] ?? String(dialect);
 
-  let context = `${emotionInstruction} Pacing: ${pacing}. Dialect: ${dialectStyle}. Multi-speaker dialogue between FVO (${femaleVoiceLabel}) and MVO (${maleVoiceLabel}). ${EMOTION_EXPRESSION_DIRECTIVE}`;
+  let intensityDirective = '';
+  if (emotionIntensity <= 30) {
+    intensityDirective = `EMOTION INTENSITY: SUBTLE / MIN (${emotionIntensity}%). Deliver with gentle restraint, understated nuance, and light presence.`;
+  } else if (emotionIntensity >= 85) {
+    intensityDirective = `EMOTION INTENSITY: MAXIMUM / PEAK (${emotionIntensity}%). Deliver with full-throttle commitment, powerful dynamic projection, and deep emotional intensity.`;
+  } else {
+    intensityDirective = `EMOTION INTENSITY: MODERATE (${emotionIntensity}%). Deliver with balanced expression and distinct emotional character.`;
+  }
+
+  let context = `${emotionInstruction} ${intensityDirective} Pacing: ${pacing}. Dialect: ${dialectStyle}. Multi-speaker dialogue between FVO (${femaleVoiceLabel}) and MVO (${maleVoiceLabel}). ${EMOTION_EXPRESSION_DIRECTIVE}`;
   if (pronunciationGuide && pronunciationGuide.trim()) {
     context += ` Pronunciation Guide: ${pronunciationGuide.trim()}.`;
   }
@@ -1234,7 +1266,8 @@ export const generateSpotAudio = async (
   pronunciationGuide?: string,
   onProgress?: (current: number, total: number) => void,
   pacing: SpeechPacing = SpeechPacing.MEDIUM,
-  multiSpeakerOptions?: MultiSpeakerOptions
+  multiSpeakerOptions?: MultiSpeakerOptions,
+  emotionIntensity: number = 80
 ): Promise<Blob> => {
   const ai = getAI();
   clearAudioCache();
@@ -1250,10 +1283,10 @@ export const generateSpotAudio = async (
     || (voice.gender === VoiceGender.MALE ? voice.apiVoiceName : 'Fenrir');
 
   const defaultPromptContext = effectiveMultiSpeaker
-    ? buildDialoguePromptContext(emotion, dialect, pacing, activePronunciationGuide, resolvedFemaleVoice, resolvedMaleVoice)
-    : buildPromptContext(emotion, dialect, voice, pacing, activePronunciationGuide);
+    ? buildDialoguePromptContext(emotion, dialect, pacing, activePronunciationGuide, resolvedFemaleVoice, resolvedMaleVoice, emotionIntensity)
+    : buildPromptContext(emotion, dialect, voice, pacing, activePronunciationGuide, emotionIntensity);
 
-  const defaultAudioTag = EMOTION_AUDIO_TAGS[emotion] ?? '';
+  const defaultAudioTag = getEmotionAudioTag(emotion, emotionIntensity);
 
   const CHUNK_SIZE = 900;
   const allChunks: { text: string; promptContext: string; audioTag: string }[] = [];
@@ -1330,12 +1363,12 @@ export const generateSpotAudio = async (
         : emotion;
 
       const segmentContext = segmentEmotion !== emotion
-        ? buildPromptContext(segmentEmotion, dialect, voice, pacing, activePronunciationGuide)
+        ? buildPromptContext(segmentEmotion, dialect, voice, pacing, activePronunciationGuide, emotionIntensity)
         : defaultPromptContext;
 
       const segmentAudioTag = voice.id === 'm_rdj_1'
-        ? '[speaking quickly and sarcastically, with dry wit, staccato bursts, and the effortless confidence of a genius who finds everything mildly amusing]'
-        : (EMOTION_AUDIO_TAGS[segmentEmotion] ?? defaultAudioTag);
+        ? '[speaking quickly and sarcastically, with dry wit, staccato bursts, and effortless confidence]'
+        : getEmotionAudioTag(segmentEmotion, emotionIntensity);
 
       const chunkTexts = splitIntoChunks(cleanedText, CHUNK_SIZE);
       for (const text of chunkTexts) {

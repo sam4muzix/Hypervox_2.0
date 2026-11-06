@@ -520,6 +520,17 @@ const TtsPanel: React.FC = () => {
   const [selectedVoice, setSelectedVoice] = useState<VoiceOption>(AVAILABLE_VOICES[0]);
   const [voiceFilter, setVoiceFilter] = useState<string>('ALL');
   const [emotion, setEmotion] = useState<Emotion>(Emotion.NEUTRAL);
+  const [emotionIntensities, setEmotionIntensities] = useState<Record<string, number>>(() => {
+    const initial: Record<string, number> = {};
+    Object.values(Emotion).forEach((e) => {
+      initial[e] = 80;
+    });
+    return initial;
+  });
+
+  const handleIntensityChange = (vibe: Emotion, value: number) => {
+    setEmotionIntensities(prev => ({ ...prev, [vibe]: value }));
+  };
   const [pacing, setPacing] = useState<SpeechPacing>(SpeechPacing.MEDIUM);
   const [isLoading, setIsLoading] = useState(false);
   const [progress, setProgress] = useState({ current: 0, total: 0 });
@@ -856,7 +867,8 @@ const TtsPanel: React.FC = () => {
         {
           femaleVoiceName: dialogueFemaleVoice,
           maleVoiceName: dialogueMaleVoice,
-        }
+        },
+        emotionIntensities[emotion] ?? 80
       );
       setAudioUrl(URL.createObjectURL(blob));
     } catch (err: any) {
@@ -1040,20 +1052,96 @@ const TtsPanel: React.FC = () => {
                     <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
                       {cat.items.map(({ vibe, label }) => {
                         const isSelected = emotion === vibe;
+                        const currentIntensity = emotionIntensities[vibe] ?? 80;
                         return (
-                          <button
-                            key={vibe}
-                            onClick={() => setEmotion(vibe)}
-                            title={vibe}
-                            className={`px-2 py-1.5 rounded-lg border text-left transition-all flex items-center gap-1.5 select-none text-xs ${
-                              isSelected
-                                ? 'bg-emerald-500/20 border-emerald-500 text-emerald-400 font-bold'
-                                : 'bg-black/30 border-white/5 text-gray-400 hover:border-white/20 hover:text-white'
-                            }`}
-                          >
-                            <span className="flex-shrink-0">{EMOTION_ICONS[vibe]}</span>
-                            <span className="truncate">{label}</span>
-                          </button>
+                          <div key={vibe} className="relative group">
+                            <button
+                              type="button"
+                              onClick={() => setEmotion(vibe)}
+                              title={`${vibe} (Intensity: ${currentIntensity}%)`}
+                              className={`w-full px-2 py-1.5 rounded-lg border text-left transition-all flex items-center justify-between gap-1 select-none text-xs cursor-pointer ${
+                                isSelected
+                                  ? 'bg-emerald-500/20 border-emerald-500 text-emerald-400 font-bold shadow-sm'
+                                  : 'bg-black/30 border-white/5 text-gray-400 hover:border-white/20 hover:text-white'
+                              }`}
+                            >
+                              <div className="flex items-center gap-1.5 min-w-0">
+                                <span className="flex-shrink-0">{EMOTION_ICONS[vibe]}</span>
+                                <span className="truncate">{label}</span>
+                              </div>
+                              <span className={`text-[9px] font-mono px-1 py-0.2 rounded transition-colors ${
+                                isSelected ? 'bg-emerald-500/30 text-emerald-300 font-bold' : 'text-gray-500 group-hover:text-emerald-400'
+                              }`}>
+                                {currentIntensity}%
+                              </span>
+                            </button>
+
+                            {/* Floating Hover Emotion Intensity Control Slider */}
+                            <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-48 p-2.5 rounded-xl bg-neutral-900/95 border border-emerald-500/40 shadow-2xl backdrop-blur-md opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto transition-all duration-200 z-50 flex flex-col gap-2">
+                              <div className="flex items-center justify-between text-[10px]">
+                                <span className="text-gray-300 font-bold truncate flex items-center gap-1">
+                                  <span>{label}</span>
+                                  <span className="text-gray-500 font-normal">Intensity</span>
+                                </span>
+                                <span className="text-emerald-400 font-mono font-bold">{currentIntensity}%</span>
+                              </div>
+                              
+                              <input
+                                type="range"
+                                min="10"
+                                max="100"
+                                step="5"
+                                value={currentIntensity}
+                                onChange={(e) => {
+                                  e.stopPropagation();
+                                  handleIntensityChange(vibe, Number(e.target.value));
+                                }}
+                                className="w-full accent-emerald-400 h-1.5 bg-neutral-700 rounded-lg cursor-pointer"
+                              />
+
+                              <div className="flex items-center justify-between text-[9px] text-gray-400">
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleIntensityChange(vibe, 20);
+                                  }}
+                                  className={`px-2 py-0.5 rounded transition-colors cursor-pointer ${
+                                    currentIntensity <= 30 ? 'bg-emerald-500/30 text-emerald-300 font-bold' : 'bg-black/40 hover:bg-white/10 text-gray-400 hover:text-white'
+                                  }`}
+                                >
+                                  Min
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleIntensityChange(vibe, 60);
+                                  }}
+                                  className={`px-2 py-0.5 rounded transition-colors cursor-pointer ${
+                                    currentIntensity > 30 && currentIntensity < 85 ? 'bg-emerald-500/30 text-emerald-300 font-bold' : 'bg-black/40 hover:bg-white/10 text-gray-400 hover:text-white'
+                                  }`}
+                                >
+                                  Mid
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleIntensityChange(vibe, 100);
+                                  }}
+                                  className={`px-2 py-0.5 rounded transition-colors cursor-pointer ${
+                                    currentIntensity >= 85 ? 'bg-emerald-500/30 text-emerald-300 font-bold' : 'bg-black/40 hover:bg-white/10 text-gray-400 hover:text-white'
+                                  }`}
+                                >
+                                  Max
+                                </button>
+                              </div>
+
+                              {/* Pointer Arrow */}
+                              <div className="absolute top-full left-1/2 -translate-x-1/2 -mt-[1px] border-4 border-transparent border-t-neutral-900/95" />
+                            </div>
+                          </div>
                         );
                       })}
                     </div>
