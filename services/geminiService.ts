@@ -516,51 +516,52 @@ const resolveStyleToEmotion = (styleKey: string, defaultEmotion: Emotion): Emoti
  * CRITICAL: These rich profiles are used to guide the TTS engine
  * within the prompt context for maximum distinctiveness.
  */
-// ─── Emotion Instructions (Natural, Grounded Studio Direction) ─────────────────
+// ─── Emotion Instructions (Authentic, Distinctive Studio Expression) ─────────
 /**
- * Natural, non-exaggerated acting profiles to guide the TTS engine.
- * Calibrated for realistic, organic human delivery without theatrical melodrama or heavy exaggeration.
+ * Expressive acting profiles to guide the TTS engine according to each emotion's name.
+ * Calibrated so every emotion distinctively delivers its named style (shouting aloud,
+ * energetic peppy bounce, deep cinematic drama, etc.) with crisp, clear articulation.
  */
-const NATURAL_REALISM_PROMPT = `DELIVERY DIRECTIVE: Speak with authentic, grounded human realism. Keep vocal inflections natural, organic, and clear. Avoid theatrical over-acting, cartoonish exaggeration, fake shouting, breathless gasping, or forced heaviness. Deliver like a professional, articulate voice artist speaking naturally to a real listener.`;
+const EMOTION_EXPRESSION_DIRECTIVE = `EXPRESSION DIRECTIVE: Fully embody the requested emotion with genuine, unmistakable vocal character. If SHOUTING, project and shout aloud with full vigor and expression; if PEPPY or EXCITED, burst with dynamic bounce and enthusiasm; if DRAMATIC or DEEP BASS, deliver with gripping tension and low-end resonance. Articulate every word clearly.`;
 
 const EMOTION_SYSTEM_INSTRUCTIONS: Record<string, string> = {
-  [Emotion.SHOUTING]: `Style: High-energy commercial delivery. Dynamic, upbeat projection and lively tempo while maintaining clean, articulate, and completely natural human speech.`,
-  [Emotion.PEPPY]: `Style: Bright, lively commercial presenter. Upbeat tempo, friendly smile, and natural conversational bounce with clear diction.`,
-  [Emotion.EXCITED]: `Style: Enthusiastic product spotlight. Bright, engaging, and genuinely positive delivery with organic vocal inflections.`,
-  [Emotion.CRICKET_STADIUM]: `Style: Energetic sports presenter. Clear, vibrant, and enthusiastic projection with crisp articulation and natural stadium excitement.`,
-  [Emotion.ANNOUNCEMENT]: `Style: Confident professional spokesperson. Measured, clear, articulate, and reassuring commercial delivery.`,
-  [Emotion.DRAMATIC]: `Style: Thoughtful narrative voice. Measured, grounded, and emotionally resonant with natural conversational pacing and zero melodrama.`,
-  [Emotion.HAPPY]: `Style: Warm, cheerful festive commercial voice. Friendly, smiling, relaxed, and genuinely approachable.`,
-  [Emotion.NEUTRAL]: `Style: Professional studio narrator. Clear, balanced, objective, and effortlessly articulate.`,
-  [Emotion.SARCASM]: `Style: Clever, witty commercial read. Subtle dry irony, knowing amusement, and understated comic timing.`,
-  [Emotion.SAD]: `Style: Sincere, heartfelt narrative. Gentle, warm, and authentic conversational intimacy.`,
-  [Emotion.LUXURY]: `Style: Premium brand voice. Refined, warm, smooth, and understated with effortless clarity and zero artificial breathiness.`,
-  [Emotion.CONVERSATIONAL]: `Style: Real conversational speaking. Natural 1-on-1 friend, completely relaxed and organic speech rhythm.`,
-  [Emotion.DEEP_BASS]: `Style: Warm baritone narrator. Grounded, resonant, and calm presence without artificial weight or forced low-end.`,
-  [Emotion.CINEMATIC_NARRATION]: `Style: Compelling documentary & film narrator. Expressive, engaging, and articulate storytelling without theatrical exaggeration.`,
-  [Emotion.JEWELLERY_ELEGANT]: `Style: Elegant jewellery commercial voice. Soft, warm, dignified, and gracefully paced with timeless poise.`,
+  [Emotion.SHOUTING]: `Style: High-volume shouting announcer. SHOUT the lines aloud at full vocal projection with intense expressive shouting, powerful lung capacity, and crisp clarity.`,
+  [Emotion.PEPPY]: `Style: Hyper-energetic Indian FM radio jockey. Very fast, bouncy, punchy rhythm, snappy cadence, and an exuberant constant smile.`,
+  [Emotion.EXCITED]: `Style: Super-excited product launch host. Exuberant, high-energy enthusiasm, bright uplifted pitch, and intense genuine excitement.`,
+  [Emotion.CRICKET_STADIUM]: `Style: Live cricket stadium commentator. Shouting aloud into the stadium microphone with booming projection and electric stadium crowd excitement.`,
+  [Emotion.ANNOUNCEMENT]: `Style: Authoritative corporate spokesperson. Deep, commanding, measured, formal, and official announcement delivery.`,
+  [Emotion.DRAMATIC]: `Style: Dramatic cinematic film trailer narrator. Deep tension, deliberate dramatic pauses, theatrical gravitas, and intense emotional suspense.`,
+  [Emotion.HAPPY]: `Style: Extremely happy, cheerful, festive commercial voice. Bright smiling tone, audible joy, warmth, and buoyant celebratory delight.`,
+  [Emotion.NEUTRAL]: `Style: Professional TV news anchor. Balanced, objective, calm, clear, and effortlessly articulate.`,
+  [Emotion.SARCASM]: `Style: Witty comedian in commercial ad. Sharp ironic intonation, audible dry smirk, and biting sarcastic punch.`,
+  [Emotion.SAD]: `Style: Deeply emotional and sorrowful storyteller. Soft, melancholy, tearful fragility, and touching emotional sincerity.`,
+  [Emotion.LUXURY]: `Style: Ultra-premium luxury brand voice. Soft, velvety, intimate near-whisper with silky smoothness and unhurried decadence.`,
+  [Emotion.CONVERSATIONAL]: `Style: Completely natural 1-on-1 casual friend. Organic conversational rhythm, relaxed vernacular delivery, and effortless ease.`,
+  [Emotion.DEEP_BASS]: `Style: Deep subwoofer bass narrator. Speak from the lowest chest register with rumbling low-end resonance and commanding authority.`,
+  [Emotion.CINEMATIC_NARRATION]: `Style: Epic Hollywood blockbuster trailer narrator. Massive theatrical projection, explosive dynamic crescendos, and cinematic grandeur.`,
+  [Emotion.JEWELLERY_ELEGANT]: `Style: Royal luxury jewellery brand ambassador. Rich, grounded, soft elegance, regal poise, and intimate warmth.`,
 };
 
 // ─── Emotion → inline audio tag ───────────────────────────────────────────────
 /**
- * Prepended to each chunk — subtle inline acting signals that guide tone without triggering over-acting.
+ * Prepended to each chunk — direct inline acting control signals.
  */
 const EMOTION_AUDIO_TAGS: Record<string, string> = {
-  [Emotion.SHOUTING]:        '[upbeat and energetic]',
-  [Emotion.PEPPY]:           '[brightly and lively]',
-  [Emotion.EXCITED]:         '[enthusiastically and naturally]',
-  [Emotion.CRICKET_STADIUM]: '[with vibrant presenter energy]',
-  [Emotion.ANNOUNCEMENT]:    '[confidently and clearly]',
-  [Emotion.DRAMATIC]:        '[expressively and deliberately]',
-  [Emotion.HAPPY]:           '[warmly and cheerfully]',
-  [Emotion.NEUTRAL]:         '[clearly and naturally]',
-  [Emotion.SARCASM]:         '[with subtle dry wit]',
-  [Emotion.SAD]:             '[gently and sincerely]',
-  [Emotion.LUXURY]:          '[smoothly and gracefully]',
-  [Emotion.CONVERSATIONAL]:  '[naturally and casually]',
-  [Emotion.DEEP_BASS]:       '[in a warm, resonant voice]',
-  [Emotion.CINEMATIC_NARRATION]: '[with compelling narrative clarity]',
-  [Emotion.JEWELLERY_ELEGANT]: '[softly, warmly and elegantly]',
+  [Emotion.SHOUTING]:        '[shouting aloud with intense energy]',
+  [Emotion.PEPPY]:           '[excitedly, fast-paced and bouncy]',
+  [Emotion.EXCITED]:         '[excited, breathless and enthusiastic]',
+  [Emotion.CRICKET_STADIUM]: '[shouting aloud, stadium announcer energy]',
+  [Emotion.ANNOUNCEMENT]:    '[seriously, authoritative and formal]',
+  [Emotion.DRAMATIC]:        '[slowly and dramatically, with intense gravitas]',
+  [Emotion.HAPPY]:           '[cheerfully, with warm joy and laughter in the voice]',
+  [Emotion.NEUTRAL]:         '[calmly, objectively and professionally]',
+  [Emotion.SARCASM]:         '[sarcastically, with a sharp knowing smirk]',
+  [Emotion.SAD]:             '[sadly, softly and with touching feeling]',
+  [Emotion.LUXURY]:          '[whispering, slow, velvety and luxurious]',
+  [Emotion.CONVERSATIONAL]:  '[casually, like a real conversation]',
+  [Emotion.DEEP_BASS]:       '[in a deep, rumbling bass voice with maximum low-end]',
+  [Emotion.CINEMATIC_NARRATION]: '[dramatically, like an epic movie trailer narrator]',
+  [Emotion.JEWELLERY_ELEGANT]: '[softly, warmly and with regal elegance]',
 };
 
 // ─── Per-voice persona overrides ──────────────────────────────────────────────
@@ -816,7 +817,7 @@ const buildPromptContext = (
   const dialectStyle = dialectMap[dialect] ?? String(dialect);
   const voicePersonaOverride = VOICE_PERSONA_OVERRIDES[voice.id] ?? `Voice: ${voice.persona}`;
 
-  let context = `${emotionInstruction} Pacing: ${pacing}. Dialect: ${dialectStyle}. ${voicePersonaOverride}. ${NATURAL_REALISM_PROMPT}`;
+  let context = `${emotionInstruction} Pacing: ${pacing}. Dialect: ${dialectStyle}. ${voicePersonaOverride}. ${EMOTION_EXPRESSION_DIRECTIVE}`;
   if (pronunciationGuide && pronunciationGuide.trim()) {
     context += ` Pronunciation Guide: ${pronunciationGuide.trim()}.`;
   }
@@ -849,7 +850,7 @@ const buildDialoguePromptContext = (
   const emotionInstruction = EMOTION_SYSTEM_INSTRUCTIONS[emotion] ?? `Style: ${emotion}`;
   const dialectStyle = dialectMap[dialect] ?? String(dialect);
 
-  let context = `${emotionInstruction} Pacing: ${pacing}. Dialect: ${dialectStyle}. Multi-speaker dialogue between FVO (${femaleVoiceLabel}) and MVO (${maleVoiceLabel}). ${NATURAL_REALISM_PROMPT}`;
+  let context = `${emotionInstruction} Pacing: ${pacing}. Dialect: ${dialectStyle}. Multi-speaker dialogue between FVO (${femaleVoiceLabel}) and MVO (${maleVoiceLabel}). ${EMOTION_EXPRESSION_DIRECTIVE}`;
   if (pronunciationGuide && pronunciationGuide.trim()) {
     context += ` Pronunciation Guide: ${pronunciationGuide.trim()}.`;
   }
