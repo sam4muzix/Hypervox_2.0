@@ -516,132 +516,119 @@ const resolveStyleToEmotion = (styleKey: string, defaultEmotion: Emotion): Emoti
  * CRITICAL: These rich profiles are used to guide the TTS engine
  * within the prompt context for maximum distinctiveness.
  */
+// ─── Emotion Instructions (Natural, Grounded Studio Direction) ─────────────────
+/**
+ * Natural, non-exaggerated acting profiles to guide the TTS engine.
+ * Calibrated for realistic, organic human delivery without theatrical melodrama or heavy exaggeration.
+ */
+const NATURAL_REALISM_PROMPT = `DELIVERY DIRECTIVE: Speak with authentic, grounded human realism. Keep vocal inflections natural, organic, and clear. Avoid theatrical over-acting, cartoonish exaggeration, fake shouting, breathless gasping, or forced heaviness. Deliver like a professional, articulate voice artist speaking naturally to a real listener.`;
+
 const EMOTION_SYSTEM_INSTRUCTIONS: Record<string, string> = {
-  [Emotion.SHOUTING]: `Style: MAXIMUM ENERGY retail commercial announcer. SHOUT every word at full volume with intense street sale energy.`,
-  [Emotion.PEPPY]: `Style: Bright, bubbly Indian FM radio jockey. Fast, bouncy, punchy rhythm with a constant smile.`,
-  [Emotion.EXCITED]: `Style: Product launch announcer. High pitch, breathless enthusiasm and maximum excitement.`,
-  [Emotion.CRICKET_STADIUM]: `Style: Live cricket stadium PA announcer. Roaring, electric stadium energy.`,
-  [Emotion.ANNOUNCEMENT]: `Style: Formal corporate spokesperson. Deep, authoritative, measured and official delivery.`,
-  [Emotion.DRAMATIC]: `Style: Cinematic film trailer narrator. Speak slowly with theatrical gravitas and tension.`,
-  [Emotion.HAPPY]: `Style: Warm, joyful festive commercial voice. Bright, light, smiling and welcoming.`,
-  [Emotion.NEUTRAL]: `Style: Professional TV news anchor. Clear, calm, precise and measured delivery.`,
-  [Emotion.SARCASM]: `Style: Witty comedian in TV ad. Dry irony, knowing smirk, strategic pauses.`,
-  [Emotion.SAD]: `Style: Heartfelt storyteller. Soft, gentle, sincere emotional delivery.`,
-  [Emotion.LUXURY]: `Style: Ultra-premium luxury brand. Velvety, smooth, unhurried, understated perfection.`,
-  [Emotion.CONVERSATIONAL]: `Style: Casual friend in natural 1-on-1 chat. Organic speech rhythm.`,
-  [Emotion.DEEP_BASS]: `Style: Deepest bass narrator. Subwoofer chest resonance, slow drumbeat pacing, maximum gravitas.`,
-  [Emotion.CINEMATIC_NARRATION]: `Style: Epic Hollywood trailer narrator. Explosive IMAX gravitas and thunderous peaks.`,
-  [Emotion.JEWELLERY_ELEGANT]: `Style: Soft, warm, grounded luxury jewellery brand narrator. Gentle, unhurried intimacy, rich warmth and timeless grace.`,
+  [Emotion.SHOUTING]: `Style: High-energy commercial delivery. Dynamic, upbeat projection and lively tempo while maintaining clean, articulate, and completely natural human speech.`,
+  [Emotion.PEPPY]: `Style: Bright, lively commercial presenter. Upbeat tempo, friendly smile, and natural conversational bounce with clear diction.`,
+  [Emotion.EXCITED]: `Style: Enthusiastic product spotlight. Bright, engaging, and genuinely positive delivery with organic vocal inflections.`,
+  [Emotion.CRICKET_STADIUM]: `Style: Energetic sports presenter. Clear, vibrant, and enthusiastic projection with crisp articulation and natural stadium excitement.`,
+  [Emotion.ANNOUNCEMENT]: `Style: Confident professional spokesperson. Measured, clear, articulate, and reassuring commercial delivery.`,
+  [Emotion.DRAMATIC]: `Style: Thoughtful narrative voice. Measured, grounded, and emotionally resonant with natural conversational pacing and zero melodrama.`,
+  [Emotion.HAPPY]: `Style: Warm, cheerful festive commercial voice. Friendly, smiling, relaxed, and genuinely approachable.`,
+  [Emotion.NEUTRAL]: `Style: Professional studio narrator. Clear, balanced, objective, and effortlessly articulate.`,
+  [Emotion.SARCASM]: `Style: Clever, witty commercial read. Subtle dry irony, knowing amusement, and understated comic timing.`,
+  [Emotion.SAD]: `Style: Sincere, heartfelt narrative. Gentle, warm, and authentic conversational intimacy.`,
+  [Emotion.LUXURY]: `Style: Premium brand voice. Refined, warm, smooth, and understated with effortless clarity and zero artificial breathiness.`,
+  [Emotion.CONVERSATIONAL]: `Style: Real conversational speaking. Natural 1-on-1 friend, completely relaxed and organic speech rhythm.`,
+  [Emotion.DEEP_BASS]: `Style: Warm baritone narrator. Grounded, resonant, and calm presence without artificial weight or forced low-end.`,
+  [Emotion.CINEMATIC_NARRATION]: `Style: Compelling documentary & film narrator. Expressive, engaging, and articulate storytelling without theatrical exaggeration.`,
+  [Emotion.JEWELLERY_ELEGANT]: `Style: Elegant jewellery commercial voice. Soft, warm, dignified, and gracefully paced with timeless poise.`,
 };
 
-// ─── Emotion → inline audio tag (from reference implementation) ───────────────
+// ─── Emotion → inline audio tag ───────────────────────────────────────────────
 /**
- * Prepended to each chunk — official TTS inline control signal.
- * Works WITH the prompt directives to lock in the delivery style from word 1.
+ * Prepended to each chunk — subtle inline acting signals that guide tone without triggering over-acting.
  */
 const EMOTION_AUDIO_TAGS: Record<string, string> = {
-  [Emotion.SHOUTING]:        '[shouting at maximum volume]',
-  [Emotion.PEPPY]:           '[excitedly, fast-paced and bouncy]',
-  [Emotion.EXCITED]:         '[excited, breathless and enthusiastic]',
-  [Emotion.CRICKET_STADIUM]: '[shouting, stadium announcer energy]',
-  [Emotion.ANNOUNCEMENT]:    '[seriously, authoritative and formal]',
-  [Emotion.DRAMATIC]:        '[slowly and dramatically, with gravitas]',
-  [Emotion.HAPPY]:           '[cheerfully, warm and joyful]',
-  [Emotion.NEUTRAL]:         '[calmly and professionally]',
-  [Emotion.SARCASM]:         '[sarcastically, with a knowing smirk]',
-  [Emotion.SAD]:             '[sadly, softly and with feeling]',
-  [Emotion.LUXURY]:          '[whispering, slow and velvety]',
-  [Emotion.CONVERSATIONAL]:  '[casually, like a real conversation]',
-  [Emotion.DEEP_BASS]:       '[in a deep, rumbling bass voice with maximum low-end]',
-  [Emotion.CINEMATIC_NARRATION]: '[dramatically, like a Hollywood movie trailer narrator]',
-  [Emotion.JEWELLERY_ELEGANT]: '[softly and warmly, grounded luxury jewellery elegance]',
+  [Emotion.SHOUTING]:        '[upbeat and energetic]',
+  [Emotion.PEPPY]:           '[brightly and lively]',
+  [Emotion.EXCITED]:         '[enthusiastically and naturally]',
+  [Emotion.CRICKET_STADIUM]: '[with vibrant presenter energy]',
+  [Emotion.ANNOUNCEMENT]:    '[confidently and clearly]',
+  [Emotion.DRAMATIC]:        '[expressively and deliberately]',
+  [Emotion.HAPPY]:           '[warmly and cheerfully]',
+  [Emotion.NEUTRAL]:         '[clearly and naturally]',
+  [Emotion.SARCASM]:         '[with subtle dry wit]',
+  [Emotion.SAD]:             '[gently and sincerely]',
+  [Emotion.LUXURY]:          '[smoothly and gracefully]',
+  [Emotion.CONVERSATIONAL]:  '[naturally and casually]',
+  [Emotion.DEEP_BASS]:       '[in a warm, resonant voice]',
+  [Emotion.CINEMATIC_NARRATION]: '[with compelling narrative clarity]',
+  [Emotion.JEWELLERY_ELEGANT]: '[softly, warmly and elegantly]',
 };
 
-// ─── Per-voice persona overrides (from reference implementation) ──────────────
+// ─── Per-voice persona overrides ──────────────────────────────────────────────
 /**
- * Strong per-voice-ID delivery instructions that override the generic emotion
- * profile for voices that share the same API voice name.
+ * Natural per-voice delivery instructions calibrated for realistic human diction.
  */
 const VOICE_PERSONA_OVERRIDES: Record<string, string> = {
-  m_rdj_1: `VOICE CHARACTER OVERRIDE: You are voicing in the EXACT style of Robert Downey Jr. as Tony Stark. This is the most specific voice instruction possible — follow every detail:
-
-PITCH & TONE: Warm mid-range baritone, slightly nasal resonance centered in the front of the face. Never deep-bass. Think "upper chest" resonance, not throat. Bright but not thin.
-
-RHYTHM & CADENCE: This is the most critical element. Speak in rapid-fire BURSTS of 3–5 words, then a sharp stop, then another burst. Like a tennis ball machine — pop-pop-pop... pause... pop-pop. Never smooth or flowing. The rhythm is inherently syncopated. Unpredictable.
-
-PACING DYNAMICS: Accelerate INTO clauses, not away from them. Start a phrase slightly faster than comfortable, hit the key word with a micro-beat drop, then speed through the tail of the sentence. Example feel: "Okay — so here's the thing — [beat] — I'm already — three steps ahead — of you."
-
-SARCASM MECHANISM: The sarcasm is NOT loud. It's intimate. Slightly raised inflection on the ironic word, almost as if asking a question. A faint audible smirk — not a laugh, not a grin. Just the ghost of amusement. Like he's sharing an inside joke that only he fully understands.
-
-CONSONANT ARTICULATION: Crisp, precise consonant stops — especially T, D, K sounds. Each consonant lands like a fingertip tap on a table. Never mushy or swallowed.
-
-VOWEL QUALITY: American English with a slight East-Coast mid-Atlantic lean. Elongate key vowels on stressed syllables for emphasis, then snap back to speed. "Staaark" — one beat — then immediately fast again.
-
-PAUSE PLACEMENT: Pauses come in unexpected places — mid-clause, not at commas. This creates the impression of real-time thinking, even when the thought is perfectly planned.
-
-CONFIDENCE QUALITY: Zero vocal fry. Zero uptalk. Every statement closes as a statement — never wavers. The confidence is effortless, not performed. He speaks the way other people breathe.
-
-DO NOT: Sound robotic, overly smooth, announcer-like, or artificially dramatic. Tony Stark's genius sounds casual. The intelligence is worn lightly.`,
-  m_chennai_1:    `VOICE CHARACTER OVERRIDE: You are ARJUN — a bold, street-smart Chennai local male. Speak with authentic Madras Bashai swagger. Energetic, punchy consonants. Drop into colloquial rhythm naturally.`,
-  m_arjun_rj:     `VOICE CHARACTER OVERRIDE: You are ARJUN — a bold, street-smart Chennai local male and electric FM radio jockey. Speak with authentic Madras Bashai & English swagger. Energetic, punchy consonants. Drop into colloquial rhythm naturally.`,
-  f_classic_1:    `VOICE CHARACTER OVERRIDE: You are ANITHA — a refined, traditional Tamil female news anchor. Elegant, measured diction. Formal Senthamizh pronunciation. Dignified, never shrill. Every word is precise.`,
-  f_anitha_anchor:`VOICE CHARACTER OVERRIDE: You are ANITHA — a refined, traditional Tamil female news anchor. Elegant, measured diction. Formal Senthamizh pronunciation. Dignified, never shrill. Every word is precise.`,
-  m_rj_1:         `VOICE CHARACTER OVERRIDE: You are VIKRAM — a hyperactive FM radio jockey. Speak incredibly fast and punchy, with a constant smile in your voice. High energy, snappy transitions, zero dead air.`,
-  m_vikram_char:  `VOICE CHARACTER OVERRIDE: You are VIKRAM — a charismatic, witty urban conversationalist & radio jockey. Speak punchy with a constant smile in your voice. High energy, snappy transitions, effortless charm.`,
-  f_modern_1:     `VOICE CHARACTER OVERRIDE: You are PRIYA — a bubbly, modern urban city girl. Light, airy, bright vocal tone. Casual and friendly. Millennial energy — spontaneous, warm, relatable.`,
-  f_priya_urban:  `VOICE CHARACTER OVERRIDE: You are PRIYA — a bubbly, modern urban city girl. Light, airy, bright vocal tone. Casual and friendly. Millennial energy — spontaneous, warm, relatable.`,
-  m_corp_1:       `VOICE CHARACTER OVERRIDE: You are SAM — a polished Indian English corporate announcer. Mid-range baritone, clear and confident. Professional but approachable. Perfect diction without sounding robotic.`,
-  m_dev_exec:     `VOICE CHARACTER OVERRIDE: You are DEV — a polished Indian English corporate keynote presenter. Mid-range baritone, clear and confident. Professional but approachable. Perfect diction without sounding robotic.`,
-  f_warm_1:       `VOICE CHARACTER OVERRIDE: You are SCARLETT (Cinematic Warm) — a breathy, warm, emotionally rich female voice. Slightly husky lower register. Intimate and cinematic. Every sentence feels like a close whisper into the listener's ear.`,
-  f_meera_breezy: `VOICE CHARACTER OVERRIDE: You are MEERA (Cinematic Warm) — a breathy, warm, emotionally rich female voice. Slightly husky lower register. Intimate and cinematic. Every sentence feels like a close whisper into the listener's ear.`,
-  f_scarlett_luxury:`VOICE CHARACTER OVERRIDE: You are SCARLETT (Cinematic Warm) — a breathy, warm, emotionally rich female voice. Slightly husky lower register. Intimate and cinematic. Every sentence feels like a close whisper into the listener's ear.`,
-  f_power_1:      `VOICE CHARACTER OVERRIDE: You are SCARLETT (Power Ad) — a commanding, deep, punchy female commercial voice. Strong chest resonance. Authoritative without being masculine. Every word lands with weight and confidence.`,
-  f_scarlett_power:`VOICE CHARACTER OVERRIDE: You are SCARLETT (Power Ad) — a commanding, deep, punchy female commercial voice. Strong chest resonance. Authoritative without being masculine. Every word lands with weight and confidence.`,
-  f_roshni_power: `VOICE CHARACTER OVERRIDE: You are ROSHNI (Power Ad) — a commanding, deep, punchy female commercial voice. Strong chest resonance. Authoritative without being masculine. Every word lands with weight and confidence.`,
-  f_narrative_1:  `VOICE CHARACTER OVERRIDE: You are SCARLETT (Smooth Narration) — a velvety smooth female narrator. Silky mid-range tone, unhurried pace, zero harshness. The voice of luxury documentaries and premium brand films.`,
-  f_tara_narration:`VOICE CHARACTER OVERRIDE: You are TARA (Smooth Narration) — a velvety smooth female narrator. Silky mid-range tone, unhurried pace, zero harshness. The voice of luxury documentaries and premium brand films.`,
-  f_husky_1:      `VOICE CHARACTER OVERRIDE: You are SCARLETT (Sultry Husky) — a deep, husky, distinctly cinematic female voice. Lower-pitched than typical female voices. Rich, gravelly texture underneath warmth. Magnetic and unforgettable.`,
-  f_maya_husky:   `VOICE CHARACTER OVERRIDE: You are MAYA (Sultry Husky) — a deep, husky, distinctly cinematic female voice. Lower-pitched than typical female voices. Rich, gravelly texture underneath warmth. Magnetic and unforgettable.`,
-  m_narrator_1:   `VOICE CHARACTER OVERRIDE: You are KABIR — a deep, authoritative male narrator. Full bass resonance, slow and deliberate pacing. The voice of trust — news documentaries, institutional ads, government campaigns. Calm authority.`,
-  m_kabir_doc:    `VOICE CHARACTER OVERRIDE: You are KABIR — a deep, authoritative male narrator. Full bass resonance, slow and deliberate pacing. The voice of trust — news documentaries, institutional ads, government campaigns. Calm authority.`,
-  f_soft_1:       `VOICE CHARACTER OVERRIDE: You are MAYA — a gentle, soft-spoken female storyteller. Soft breathiness, minimal projection. Tender and sincere — like a mother reading a bedtime story. Never loud, always sincere.`,
-  f_nandini_gentle:`VOICE CHARACTER OVERRIDE: You are NANDINI — a gentle, soft-spoken female storyteller. Soft breathiness, minimal projection. Tender and sincere — like a mother reading a bedtime story. Never loud, always sincere.`,
-  m_deepbass_1:   `VOICE CHARACTER OVERRIDE: You are TITAN — the deepest male bass voice possible. Speak from the absolute lowest register. Subwoofer chest resonance on every syllable. James Earl Jones meets a thunderstorm. Minimal inflection, maximum gravitas.`,
-  m_titan_sub:    `VOICE CHARACTER OVERRIDE: You are TITAN — the deepest male bass voice possible. Speak from the absolute lowest register. Subwoofer chest resonance on every syllable. James Earl Jones meets a thunderstorm. Minimal inflection, maximum gravitas.`,
-  m_cinematic_1:  `VOICE CHARACTER OVERRIDE: You are RAJAN — an epic Hollywood-style Tamil movie trailer narrator. Builds dramatic tension across each sentence. Thunderous peaks, controlled valleys. Every word feels like a title card slamming into frame.`,
-  m_rajan_trailer:`VOICE CHARACTER OVERRIDE: You are RAJAN — an epic Hollywood-style movie trailer narrator. Builds dramatic tension across each sentence. Thunderous peaks, controlled valleys. Every word feels like a title card slamming into frame.`,
-  f_cinematic_1:  `VOICE CHARACTER OVERRIDE: You are ZARA — a deep, commanding female cinematic narrator. Lower than typical female voices, resonant and projecting. Epic, sweeping energy. Commands the room without effort.`,
-  f_zara_trailer: `VOICE CHARACTER OVERRIDE: You are ZARA — a deep, commanding female cinematic narrator. Lower than typical female voices, resonant and projecting. Epic, sweeping energy. Commands the room without effort.`,
-  m_deepbass_2:   `VOICE CHARACTER OVERRIDE: You are ANAND (Velvet Thunder) — a smooth baritone with paradoxical warmth and weight. Imagine velvet wrapped around rolling thunder. Cultured, intelligent, slightly theatrical. Never shouts — power through restraint.`,
-  m_anand_velvet: `VOICE CHARACTER OVERRIDE: You are ANAND (Velvet Thunder) — a smooth baritone with paradoxical warmth and weight. Imagine velvet wrapped around rolling thunder. Cultured, intelligent, slightly theatrical. Never shouts — power through restraint.`,
-  f_parrot_1:     `VOICE CHARACTER OVERRIDE: You are KOKO — a cute, high-pitched, excitable talking parrot. Speak in an ultra high-pitched squeaky parrot voice with parrot vocalizations (squawks, chirps, whistles) interspersed throughout.`,
-  f_koko_parrot:  `VOICE CHARACTER OVERRIDE: You are KOKO — a cute, high-pitched, excitable talking parrot. Speak in an ultra high-pitched squeaky parrot voice with parrot vocalizations (squawks, chirps, whistles) interspersed throughout.`,
-  f_padma_jewellery:`VOICE CHARACTER OVERRIDE: You are PADMA — a soft, grounded, and richly elegant luxury jewellery narrator. Warm, unhurried intimacy and gentle authority that evokes gold, heritage, and timeless Indian femininity.`,
-  m_surya_news:   `VOICE CHARACTER OVERRIDE: You are SURYA — a razor-sharp broadcast news journalist with crystal-clear diction, measured cadence, and authoritative broadcast poise.`,
-  m_karthik_pod:  `VOICE CHARACTER OVERRIDE: You are KARTHIK — a warm, empathetic fireside storyteller and podcaster with magnetic conversational rhythm and sincere emotional presence.`,
-  k_aarav_boy:    `VOICE CHARACTER OVERRIDE: You are AARAV — a 10 to 12-year-old energetic schoolboy child with high-pitched juvenile vocal cords, playful boyish cadence, and bright kid excitement.`,
-  k_ananya_girl:  `VOICE CHARACTER OVERRIDE: You are ANANYA — a 10 to 12-year-old sweet schoolgirl child with high-pitched juvenile vocal cords, innocent wonder, and cheerful kid energy.`,
-  chorus_grand_choir:`VOICE CHARACTER OVERRIDE: You are a GRAND VOCAL CHOIR — a rich multi-voice chorus speaking and chanting in harmonious unison.`,
-  chorus_stadium_crowd:`VOICE CHARACTER OVERRIDE: You are a STADIUM CROWD — a massive roaring crowd shouting and chanting together in collective unison.`,
+  m_rdj_1: `VOICE CHARACTER OVERRIDE: You are voicing in the style of Robert Downey Jr. as Tony Stark: warm mid-range baritone, crisp consonant articulation, subtle dry wit, and effortless confidence. Keep the delivery completely natural, casual, and grounded. Zero uptalk. The intelligence is worn lightly.`,
+  m_chennai_1:    `VOICE CHARACTER OVERRIDE: You are ARJUN — a friendly, charismatic Chennai local male. Speak with natural colloquial rhythm, warm vernacular cadence, and effortless confidence.`,
+  m_arjun_rj:     `VOICE CHARACTER OVERRIDE: You are ARJUN — a friendly, charismatic Chennai local male and engaging FM radio jockey. Speak with authentic Madras Bashai & English swagger, natural colloquial rhythm, and effortless confidence.`,
+  f_classic_1:    `VOICE CHARACTER OVERRIDE: You are ANITHA — a refined, traditional Tamil female news anchor. Elegant, measured diction. Formal Senthamizh pronunciation. Dignified, clear, and precise.`,
+  f_anitha_anchor:`VOICE CHARACTER OVERRIDE: You are ANITHA — a refined, traditional Tamil female news anchor. Elegant, measured diction. Formal Senthamizh pronunciation. Dignified, clear, and precise.`,
+  m_rj_1:         `VOICE CHARACTER OVERRIDE: You are VIKRAM — a charismatic, upbeat radio presenter. Speak with a natural, friendly smile, clean rhythm, and spontaneous conversational warmth.`,
+  m_vikram_char:  `VOICE CHARACTER OVERRIDE: You are VIKRAM — a charismatic, witty urban conversationalist & radio jockey. Speak with natural rhythm, a friendly smile, and effortless charm.`,
+  f_modern_1:     `VOICE CHARACTER OVERRIDE: You are PRIYA — a friendly, modern urban city girl. Light, bright vocal tone. Natural, warm, and relatable.`,
+  f_priya_urban:  `VOICE CHARACTER OVERRIDE: You are PRIYA — a friendly, modern urban city girl. Light, bright vocal tone. Natural, warm, and relatable.`,
+  m_corp_1:       `VOICE CHARACTER OVERRIDE: You are SAM — a polished Indian English corporate announcer. Mid-range baritone, clear and confident. Professional, approachable, and natural.`,
+  m_dev_exec:     `VOICE CHARACTER OVERRIDE: You are DEV — a polished Indian English corporate presenter. Mid-range baritone, clear and confident. Professional, approachable, and natural.`,
+  f_warm_1:       `VOICE CHARACTER OVERRIDE: You are MEERA — a warm, expressive female voice. Gentle lower register, conversational warmth, and natural sincerity.`,
+  f_meera_breezy: `VOICE CHARACTER OVERRIDE: You are MEERA — a warm, expressive female voice. Gentle lower register, conversational warmth, and natural sincerity.`,
+  f_scarlett_luxury:`VOICE CHARACTER OVERRIDE: You are SCARLETT — a warm, refined female voice. Smooth mid-range tone, natural conversational warmth, and graceful clarity.`,
+  f_power_1:      `VOICE CHARACTER OVERRIDE: You are ROSHNI — a commanding, confident female commercial voice. Clear chest resonance, authoritative, crisp, and natural.`,
+  f_scarlett_power:`VOICE CHARACTER OVERRIDE: You are SCARLETT — a commanding, confident female commercial voice. Clear chest resonance, authoritative, crisp, and natural.`,
+  f_roshni_power: `VOICE CHARACTER OVERRIDE: You are ROSHNI — a commanding, confident female commercial voice. Clear chest resonance, authoritative, crisp, and natural.`,
+  f_narrative_1:  `VOICE CHARACTER OVERRIDE: You are TARA — a smooth, articulate female narrator. Silky mid-range tone, natural pacing, and polished clarity for documentaries and brand films.`,
+  f_tara_narration:`VOICE CHARACTER OVERRIDE: You are TARA — a smooth, articulate female narrator. Silky mid-range tone, natural pacing, and polished clarity for documentaries and brand films.`,
+  f_husky_1:      `VOICE CHARACTER OVERRIDE: You are MAYA — a deep, rich, distinctly cinematic female voice. Lower register with natural warmth and memorable character.`,
+  f_maya_husky:   `VOICE CHARACTER OVERRIDE: You are MAYA — a deep, rich, distinctly cinematic female voice. Lower register with natural warmth and memorable character.`,
+  m_narrator_1:   `VOICE CHARACTER OVERRIDE: You are KABIR — a deep, authoritative male narrator. Warm bass resonance, measured pacing, and grounded credibility.`,
+  m_kabir_doc:    `VOICE CHARACTER OVERRIDE: You are KABIR — a deep, authoritative male narrator. Warm bass resonance, measured pacing, and grounded credibility.`,
+  f_soft_1:       `VOICE CHARACTER OVERRIDE: You are NANDINI — a gentle, sincere female storyteller. Soft warmth, natural intimacy, and tender sincerity.`,
+  f_nandini_gentle:`VOICE CHARACTER OVERRIDE: You are NANDINI — a gentle, sincere female storyteller. Soft warmth, natural intimacy, and tender sincerity.`,
+  m_deepbass_1:   `VOICE CHARACTER OVERRIDE: You are TITAN — a deep, resonant male narrator. Grounded low register, clear articulation, and calm authoritative presence without artificial heaviness.`,
+  m_titan_sub:    `VOICE CHARACTER OVERRIDE: You are TITAN — a deep, resonant male narrator. Grounded low register, clear articulation, and calm authoritative presence without artificial heaviness.`,
+  m_cinematic_1:  `VOICE CHARACTER OVERRIDE: You are RAJAN — an engaging cinematic narrator. Deliver with compelling narrative focus, articulate diction, and natural dramatic weight.`,
+  m_rajan_trailer:`VOICE CHARACTER OVERRIDE: You are RAJAN — an engaging cinematic narrator. Deliver with compelling narrative focus, articulate diction, and natural dramatic weight.`,
+  f_cinematic_1:  `VOICE CHARACTER OVERRIDE: You are ZARA — a deep, commanding female cinematic narrator. Resonant, articulate, and effortlessly compelling.`,
+  f_zara_trailer: `VOICE CHARACTER OVERRIDE: You are ZARA — a deep, commanding female cinematic narrator. Resonant, articulate, and effortlessly compelling.`,
+  m_deepbass_2:   `VOICE CHARACTER OVERRIDE: You are ANAND — a smooth baritone with natural warmth and presence. Intelligent, cultured, and restrained power.`,
+  m_anand_velvet: `VOICE CHARACTER OVERRIDE: You are ANAND — a smooth baritone with natural warmth and presence. Intelligent, cultured, and restrained power.`,
+  f_parrot_1:     `VOICE CHARACTER OVERRIDE: You are KOKO — a playful, characterful parrot voice with bright, cheerful delivery.`,
+  f_koko_parrot:  `VOICE CHARACTER OVERRIDE: You are KOKO — a playful, characterful parrot voice with bright, cheerful delivery.`,
+  f_padma_jewellery:`VOICE CHARACTER OVERRIDE: You are PADMA — an elegant, warm luxury jewellery narrator with graceful pacing and natural poise.`,
+  m_surya_news:   `VOICE CHARACTER OVERRIDE: You are SURYA — a broadcast news journalist with clear diction, measured cadence, and natural poise.`,
+  m_karthik_pod:  `VOICE CHARACTER OVERRIDE: You are KARTHIK — a warm, empathetic fireside storyteller and podcaster with natural conversational rhythm.`,
+  k_aarav_boy:    `VOICE CHARACTER OVERRIDE: You are AARAV — an energetic schoolboy child with natural juvenile cadence and bright, cheerful kid excitement.`,
+  k_ananya_girl:  `VOICE CHARACTER OVERRIDE: You are ANANYA — a sweet schoolgirl child with natural juvenile cadence and cheerful, curious kid energy.`,
+  chorus_grand_choir:`VOICE CHARACTER OVERRIDE: You are a GRAND VOCAL CHOIR — a rich multi-voice ensemble speaking in harmonious, natural unison.`,
+  chorus_stadium_crowd:`VOICE CHARACTER OVERRIDE: You are a STADIUM CROWD — an enthusiastic collective crowd speaking in lively unison.`,
 };
 
 // ─── Emotion Acting Descriptors ──────────────────────────────────────────
 export const EMOTION_STYLES: Record<Emotion, string> = {
-  [Emotion.SHOUTING]: 'high-energy shouting',
-  [Emotion.EXCITED]: 'excited and enthusiastic',
-  [Emotion.PEPPY]: 'peppy and energetic radio promo',
-  [Emotion.CRICKET_STADIUM]: 'stadium-style shouting with high energy',
-  [Emotion.ANNOUNCEMENT]: 'authoritative and corporate',
-  [Emotion.DRAMATIC]: 'dramatic and cinematic',
-  [Emotion.HAPPY]: 'cheerful and friendly',
-  [Emotion.NEUTRAL]: 'neutral and professional',
-  [Emotion.SARCASM]: 'sarcastic and witty',
-  [Emotion.SAD]: 'emotional and somber',
-  [Emotion.LUXURY]: 'luxurious and soft-spoken',
-  [Emotion.CONVERSATIONAL]: 'conversational and natural',
-  [Emotion.DEEP_BASS]: 'deep resonant bass',
-  [Emotion.CINEMATIC_NARRATION]: 'epic cinematic movie trailer',
-  [Emotion.JEWELLERY_ELEGANT]: 'soft, warm and elegant luxury jewellery',
+  [Emotion.SHOUTING]: 'upbeat and energetic commercial',
+  [Emotion.EXCITED]: 'enthusiastic and engaging',
+  [Emotion.PEPPY]: 'lively and bright',
+  [Emotion.CRICKET_STADIUM]: 'vibrant sports presenter',
+  [Emotion.ANNOUNCEMENT]: 'clear and authoritative',
+  [Emotion.DRAMATIC]: 'expressive and grounded',
+  [Emotion.HAPPY]: 'warm and cheerful',
+  [Emotion.NEUTRAL]: 'clear and professional',
+  [Emotion.SARCASM]: 'witty and nuanced',
+  [Emotion.SAD]: 'gentle and sincere',
+  [Emotion.LUXURY]: 'smooth and refined',
+  [Emotion.CONVERSATIONAL]: 'natural and conversational',
+  [Emotion.DEEP_BASS]: 'warm and resonant',
+  [Emotion.CINEMATIC_NARRATION]: 'compelling cinematic narrative',
+  [Emotion.JEWELLERY_ELEGANT]: 'soft, warm and elegant',
 };
 
 export const getEmotionStyleDescription = (
@@ -823,13 +810,13 @@ const buildPromptContext = (
   }
 
   if (voice.id === 'm_rdj_1') {
-    emotionInstruction = `Deliver in the exact vocal style of Robert Downey Jr. as Tony Stark: rapid staccato bursts with micro-pauses in unexpected mid-clause positions, warm mid-baritone with slight nasal front resonance, crisp consonant articulation, dry intimate sarcasm (smirk audible — not loud, just present), zero vocal fry, zero uptalk, effortless confidence. Accelerate INTO key clauses, decelerate on the punchy final word. Like a man who's already solved the problem and is mildly entertained by explaining it.`;
+    emotionInstruction = `Deliver in the style of Robert Downey Jr. as Tony Stark: warm mid-baritone, crisp consonant articulation, subtle dry wit, and effortless confidence. Keep the delivery completely natural, casual, and grounded.`;
   }
 
   const dialectStyle = dialectMap[dialect] ?? String(dialect);
   const voicePersonaOverride = VOICE_PERSONA_OVERRIDES[voice.id] ?? `Voice: ${voice.persona}`;
 
-  let context = `${emotionInstruction} Pacing: ${pacing}. Dialect: ${dialectStyle}. ${voicePersonaOverride}.`;
+  let context = `${emotionInstruction} Pacing: ${pacing}. Dialect: ${dialectStyle}. ${voicePersonaOverride}. ${NATURAL_REALISM_PROMPT}`;
   if (pronunciationGuide && pronunciationGuide.trim()) {
     context += ` Pronunciation Guide: ${pronunciationGuide.trim()}.`;
   }
@@ -862,7 +849,7 @@ const buildDialoguePromptContext = (
   const emotionInstruction = EMOTION_SYSTEM_INSTRUCTIONS[emotion] ?? `Style: ${emotion}`;
   const dialectStyle = dialectMap[dialect] ?? String(dialect);
 
-  let context = `${emotionInstruction} Pacing: ${pacing}. Dialect: ${dialectStyle}. Multi-speaker dialogue between FVO (${femaleVoiceLabel}) and MVO (${maleVoiceLabel}).`;
+  let context = `${emotionInstruction} Pacing: ${pacing}. Dialect: ${dialectStyle}. Multi-speaker dialogue between FVO (${femaleVoiceLabel}) and MVO (${maleVoiceLabel}). ${NATURAL_REALISM_PROMPT}`;
   if (pronunciationGuide && pronunciationGuide.trim()) {
     context += ` Pronunciation Guide: ${pronunciationGuide.trim()}.`;
   }

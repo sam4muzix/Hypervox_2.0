@@ -275,7 +275,7 @@ const VIBE_CATEGORIES = [
   {
     category: 'High Energy',
     items: [
-      { vibe: Emotion.SHOUTING, label: 'Shout' },
+      { vibe: Emotion.SHOUTING, label: 'Energetic' },
       { vibe: Emotion.PEPPY, label: 'Peppy' },
       { vibe: Emotion.EXCITED, label: 'Excited' },
       { vibe: Emotion.CRICKET_STADIUM, label: 'Stadium' },
