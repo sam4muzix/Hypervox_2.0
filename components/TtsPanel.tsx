@@ -21,6 +21,15 @@ const AVAILABLE_VOICES: VoiceOption[] = [
 
   // ── Male Voices ──
   { 
+    id: 'm_rdj_1', 
+    name: 'Tony — RDJ Style', 
+    gender: VoiceGender.MALE, 
+    apiVoiceName: 'Charon', 
+    persona: 'Robert Downey Jr. / Tony Stark — witty, rapid-fire, sarcastic genius-billionaire energy',
+    tag: 'Hollywood / Marvel',
+    category: 'Celebrity'
+  },
+  { 
     id: 'm_arjun_rj', 
     name: 'Arjun — Electric RJ', 
     gender: VoiceGender.MALE, 
